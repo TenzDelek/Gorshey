@@ -1,5 +1,7 @@
 # Gorshey · སྒོར་གཞས།
 
+<img width="2534" height="1334" alt="image" src="https://github.com/user-attachments/assets/f2eb1e2a-af74-41a9-ade5-11758f6cf8c1" />
+
 A tiny animated pixel-art diorama of an imagined summer gathering on the Tibetan grassland. **Gorshey**
 (སྒོར་གཞས།) is a sung circle dance: the dancers form one ring and step around it while they sing, and each
 song has its own steps. Here twelve men, women, elders and children in chuba dance around a campfire at an
