@@ -15,19 +15,17 @@ const facing = (x, z, tx = 0, tz = 0) => Math.atan2(tx - x, tz - z);   // ry tha
 const toWorld = ([x, z], ry, u, v) => [x + Math.cos(ry) * u + Math.sin(ry) * v, z - Math.sin(ry) * u + Math.cos(ry) * v];
 const toLocal = ([x, z], ry, wx, wz) => { const dx = wx - x, dz = wz - z; return [dx * Math.cos(ry) - dz * Math.sin(ry), dx * Math.sin(ry) + dz * Math.cos(ry)]; };
 
-// Seats in rug space (u along the rug's length, toward the camera; v across it, + away from the fire).
-// Staggered in screen x (= -v at the default view) so nobody hides anybody: the musician on the inner
-// (fire) half, the grandmother on the outer half, the girl in front of her outer knee, below the wheel.
-// All three sit in the front of the rug so their heads stay clear of the tea table behind it (the
-// table's front face starts ~0.65 m above the rug centre on screen); the back of the rug stays open.
-const [MU_U, MU_V] = toLocal(LAYOUT.rug.pos, LAYOUT.rug.ry, ...LAYOUT.musician.pos);
+// Seats in rug space (u along the rug's length, screen down-right; v across it, + away from the fire, screen
+// down-left). Rug centre on screen ≈ +42·u − 57·v px right, +31·u + 23·v px down (1080², zoom 1).
+// The three are staggered so their heads never stack and the red field shows between them: the musician on
+// the inner (fire) corner, the grandmother at the back on the outer half with the wheel on her camera side,
+// the girl in the front between them, below the grandmother's knees and behind the musician's back.
 const SEATS = {
-  // LAYOUT.musician moved 0.53 m forward along the rug (his hat then clears the table), facing the fire,
-  // turned 0.3 rad toward the camera
-  musician: { u: MU_U + 0.53, v: MU_V - 0.01, turn: -0.3 },
-  elder: { u: 0.02, v: 0.31, ry: 1.45 },                      // three-quarters to the camera, toward the fire and the musician
-  child: { u: 0.68, v: 0.42, ry: 1.15 },                      // beside her, watching the musician and the ring
+  musician: { u: null, v: null, ry: LAYOUT.musician.ry },   // LAYOUT.musician: facing the fire, 0.1 rad back toward profile
+  elder: { u: -0.55, v: -0.02, ry: 1.4 },                    // three-quarters to the camera, toward the fire and the musician
+  child: { u: 0.62, v: 0.32, ry: 1.2 },                      // three-quarters to the camera, watching the musician and the ring
 };
+[SEATS.musician.u, SEATS.musician.v] = toLocal(LAYOUT.rug.pos, LAYOUT.rug.ry, ...LAYOUT.musician.pos);
 
 export function build(ctx) {
   const group = new THREE.Group();
@@ -43,7 +41,7 @@ export function build(ctx) {
   const place = (fig, s) => {
     const [x, z] = toWorld(R0.pos, R0.ry, s.u, s.v);
     fig.mesh.position.set(x, RUG.h, z);
-    fig.mesh.rotation.y = s.ry ?? facing(x, z) + (s.turn ?? 0);
+    fig.mesh.rotation.y = s.ry ?? facing(x, z);
     group.add(fig.mesh);
   };
   const musician = buildMusician();
@@ -53,7 +51,7 @@ export function build(ctx) {
   const child = buildChild();
   place(child, SEATS.child);
 
-  // ---- tea table: just past the rug's back short edge ----------------------------------------------
+  // ---- tea table: on the grass beside the rug's outer long edge, the churn past its far end -----------
   const tea = buildTeaSet();
   tea.position.set(LAYOUT.teaTable.pos[0], 0, LAYOUT.teaTable.pos[1]);
   tea.rotation.y = LAYOUT.teaTable.ry;

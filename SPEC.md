@@ -41,16 +41,16 @@ shadows, no thick black outlines, white space all around.
 ## Files and owners
 
 ```
-gorshey/index.html      page + import map (three r170 from jsDelivr)          integration
-gorshey/js/main.js      boot, loop, modules, drag-to-turn, theme sync          integration
-gorshey/js/render.js    pixel pipeline, camera framing, lights                 integration
-gorshey/js/core.js      shared helpers, LAYOUT, FOOTPRINTS, PAL, CLEAR, GLSL   integration (ask in your report)
-gorshey/js/base.js      flat test-bed patch (?only=base,<module>)              integration
-gorshey/js/ground.js    meadow base, grass, flowers, trampled ring             ground
-gorshey/js/fire.js      fire pit, flames, sparks, smoke, fire light            fire
-gorshey/js/dancers.js   twelve dancers + choreography                          dancers
-gorshey/js/camp.js      lingka tent, prayer flags + pole, mani stones, sangbum, woodpile   camp
-gorshey/js/life.js      musician w/ dranyen, elder w/ prayer wheel, girl, rug, tea table + thermos, yak, dog   life
+index.html      page + import map (three r170 from jsDelivr)          integration
+js/main.js      boot, loop, modules, drag-to-turn, theme sync          integration
+js/render.js    pixel pipeline, camera framing, lights                 integration
+js/core.js      shared helpers, LAYOUT, FOOTPRINTS, PAL, CLEAR, GLSL   integration (ask in your report)
+js/base.js      flat test-bed patch (?only=base,<module>)              integration
+js/ground.js    meadow base, grass, flowers, trampled ring             ground
+js/fire.js      fire pit, flames, sparks, smoke, fire light            fire
+js/dancers.js   twelve dancers + choreography                          dancers
+js/camp.js      lingka tent, prayer flags + pole, mani stones, sangbum, woodpile   camp
+js/life.js      musician w/ dranyen, elder w/ prayer wheel, girl, rug, tea table + thermos, yak, dog   life
 tools/*.mjs             shot.mjs, capture.mjs, motion-probe.mjs, imgdiff.mjs   integration
 ```
 
@@ -91,15 +91,21 @@ Modules load in parallel and are built strictly in this order: ground, fire, dan
 
 - `LAYOUT` — positions `[x, z]` in metres (fire at the origin, camera looks from +x,+z), `ry` about +y.
   Object-local `(u, v)` maps to world `x = pos.x + u·cos ry + v·sin ry`, `z = pos.z − u·sin ry + v·cos ry`.
-  - `rug: { pos: [-3.2, 3.1], ry: -0.785, w: 1.92, d: 1.2 }` — on the ring's left flank. Rug-local u (the
-    length w) runs along world (0.707, 0.707), toward the camera; +v points away from the fire; the inner
-    edge is at r ≈ 3.86 (dancers reach 3.62 m).
-  - `musician: { pos: [-3.15, 2.75], ry: 2.29 }` — seat on the rug's inner half, facing the fire (local +z forward).
-  - `teaTable: { pos: [-4.19, 2.11], ry: -0.785 }` — just past the rug's back (−u) short edge, ~0.2 m gap.
+  - `rug: { pos: [-4.6, 1.85], ry: -0.15, w: 1.8, d: 1.15 }` — on the ring's left flank. Its edges run
+    (almost) along the world axes, so at az 45° it lies on the ground as a parallelogram: rug-local u (the
+    length w) runs along world (0.989, 0.149), +v along (−0.149, 0.989), away from the fire; the nearest
+    (inner) corner is at r ≈ 3.84 (dancers reach 3.62 m).
+  - `musician: { pos: [-3.94, 1.65], ry: 2.07 }` — seat by the rug's inner corner, facing the fire (local +z
+    forward), dranyen in profile.
+  - `teaTable: { pos: [-4.2, 2.92], ry: 1.42 }` — on the grass beside the rug's outer (+v) long edge, long
+    axis along it.
   - `yak: { pos: [4.5, 1.65], ry: -2.36 }` — profile foreground anchor at front-right; model head +x maps
     to world (−0.707, 0.707), screen-left at az 45°.
-  - `dog: { pos: [-5.1, -0.75], ry: 0.79 }`, `flagPole: { pos: [3.4, -3.2] }`, `tent`, `flagAnchors`,
-    `mani`, `woodpile`, `sangbum`, `circle` (r 2.55, 12 dancers), `path`, `fire`.
+  - `flagAnchors` — far ends of the three lungta lines: the tent peak, a ground stake at [4.0, -1.0] (front-left
+    of the pole, since the darchog flies to screen-right), and the mani cairn's khata stick (= `mani.pos`).
+  - `mani: { pos: [0.5, -4.7] }` — ~1 m left of the flag pole on screen, so the two don't stack.
+  - `dog: { pos: [-5.45, -0.45], ry: 0.79 }`, `flagPole: { pos: [3.4, -3.2] }`, `tent`, `woodpile`,
+    `sangbum`, `circle` (r 2.55, 12 dancers), `path`, `fire`.
 - `CLEAR` — round grass-free footprints `[x, z, r]`, every entry derived from LAYOUT; `CLEAR[0]` is the
   fire (1.05). Radii: tent 1.75, rug 1.0, teaTable 0.5, mani 0.55, woodpile 0.6, flagPole 0.3, sangbum 0.45.
   `isClear(x, z, pad)`.

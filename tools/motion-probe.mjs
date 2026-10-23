@@ -3,7 +3,7 @@
 //                             [--out shots/motion/probe] [--report-only]
 // Loads index.html?static=1&debug=1&<q>, waits for the page to be ready, renders t = from, from + 1/fps, ... to
 // with window.__renderAt(t), and reads window.gorshey.debug.dancers (or the legacy window.__dancers):
-// an array of { spec: { name }, rig: { bones, mesh }, D } (bone names: BONE_NAMES in gorshey/js/dancers-rig.js).
+// an array of { spec: { name }, rig: { bones, mesh }, D } (bone names: BONE_NAMES in js/dancers-rig.js).
 // Checks per dancer (failures exit 1 unless --report-only):
 //   1. hips Δy > 3 cm between frames (frames where both soles are > 1 cm up are skipped)
 //   2. planted sole drift > 0.3 cm per frame (heel/toe point below 1 cm in both frames)
@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, arr) => (v.startsWith('--') ? [...a, [v.slice(2), arr[i + 1]?.startsWith('--') || arr[i + 1] === undefined ? '1' : arr[i + 1]]] : a), []));
-const base = args.base ?? 'http://localhost:8787/gorshey/index.html';
+const base = args.base ?? 'http://localhost:8787/index.html';
 const q = args.q ?? 'only=base,dancers';
 const from = +(args.from ?? 0), to = +(args.to ?? 48), fps = +(args.fps ?? 30);
 const out = args.out ?? 'shots/motion/probe';

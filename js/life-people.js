@@ -218,7 +218,8 @@ export function buildMusician() {
   const Y = new THREE.Vector3().crossVectors(Z, X);
   const F = new THREE.Matrix4().makeBasis(X, Y, Z).setPosition(Bc);
   rig.bone('dran', 'spine', Bc.toArray());
-  for (const g of dranyenGeos()) rig.add('dran', gXform(g, F), undefined, 1);
+  // no fire rim on the instrument: the fire's own light warms it, and a rim lit the whole neck into a rod
+  for (const g of dranyenGeos()) rig.add('dran', gXform(g, F), undefined, 0);
   const along = (s, up = 0) => Bc.clone().addScaledVector(X, s).addScaledVector(Z, up).toArray();
 
   // right arm: out of the robe, white silk sleeve, strumming over the skin

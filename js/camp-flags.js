@@ -157,13 +157,14 @@ export function buildFlags({ solids, cloth, tentTip, cairnTop }) {
 
   // lungta strings from the pole top
   const top = V(px + 0.03 * Math.sin(3.3), POLE_H - 0.26, pz);
-  // anchor 0: the tent's ridge-pole tip. Anchor 2 lies beside the mani cairn, so that line is tied to the
-  // cairn's stick, as lungta lines often are. Anchor 1 is a ground stake, nudged inside the patch and a little
-  // to screen-left so its line does not run straight down the pole in the default view.
+  // anchor 0: the tent's ridge-pole tip. Anchor 2 (LAYOUT.flagAnchors[2]) is the mani cairn's khata stick, as
+  // lungta lines often are. Anchor 1 is a ground stake front-left of the pole, where its line leaves the pole
+  // top ~15° off vertical, clear of the cairn line (~35°) and the tent line. The stake stays 0.5 m outside the
+  // dancers' 3.62 m reach and above the yak's back on screen.
   const anchors = LAYOUT.flagAnchors.map(([x, z], i) => {
     if (i === 0 && tentTip) return tentTip.clone();
-    if (cairnTop && Math.hypot(x - cairnTop.x, z - cairnTop.z) < 0.8) return cairnTop.clone().add(V(0, -0.06, 0));
-    const [ax, az] = insidePatch(x - 0.42, z + 0.42, 0.66);
+    if (cairnTop && Math.hypot(x - cairnTop.x, z - cairnTop.z) < 0.8) return cairnTop.clone().add(V(0, -0.04, 0));
+    const [ax, az] = insidePatch(x, z, 0.66);
     return V(ax, 0.2, az);
   });
   anchors.forEach((E, si) => {
@@ -180,29 +181,33 @@ export function buildFlags({ solids, cloth, tentTip, cairnTop }) {
     }
     const A = top.clone().add(V(0, -0.06 * si, 0));
     const len = A.distanceTo(E);
-    const sag = ground ? 0.22 + 0.04 * len : 0.12 * len;
+    // sag follows the horizontal span; a steep line to a stake is pulled nearly taut (any sag would bow it
+    // back toward the pole on screen)
+    const span = Math.hypot(E.x - A.x, E.z - A.z);
+    const sag = ground ? 0.06 + 0.03 * span : 0.12 * len;
     const N = Math.max(12, Math.ceil(len / 0.08));
     const P = (s) => new THREE.Vector3().lerpVectors(A, E, s).add(V(0, -sag * 4 * s * (1 - s), 0));
     const pts = [], sw = [];
     for (let i = 0; i <= N; i++) { pts.push(P(i / N)); sw.push(4 * (i / N) * (1 - i / N)); }
     ribbon(cloth, pts, CP.rope, sw);
 
-    // flags along the string at a fixed arc-length pitch, starting a little off the pole
+    // flags along the string at a fixed arc-length pitch, starting a little off the pole (on the steep stake
+    // line a little further down, so its first flags do not sit on the pole top beside the darchog)
     const arc = [0];
     for (let i = 1; i <= N; i++) arc.push(arc[i - 1] + pts[i].distanceTo(pts[i - 1]));
     const total = arc[N];
     const at = (d) => { let i = 1; while (i < N && arc[i] < d) i++; const k = (d - arc[i - 1]) / (arc[i] - arc[i - 1]); return { p: new THREE.Vector3().lerpVectors(pts[i - 1], pts[i], k), s: (i - 1 + k) / N }; };
     const FW = 0.22, PITCH = 0.265;
     let idx = 0;
-    for (let d = 0.28; d + FW < total - 0.15; d += PITCH, idx++) {
+    for (let d = ground ? 0.62 : 0.28; d + FW < total - 0.15; d += PITCH, idx++) {
       const a = at(d), b = at(d + FW);
       if (Math.min(a.p.y, b.p.y) - 0.22 < 0.9) break;     // flags (bottom edges included) stay above 0.9 m
       const tng = new THREE.Vector3().subVectors(b.p, a.p).normalize();
-      // hang straight down, lifted a little downwind about the string
-      const nrm = new THREE.Vector3().crossVectors(tng, V(0, -1, 0)).normalize();
-      const wperp = WIND_DIR.dot(nrm);
-      const lift = 0.32 * wperp + (R() - 0.5) * 0.12;
-      const hang = nrm.clone().multiplyScalar(Math.sin(lift)).setY(-Math.cos(lift)).normalize();
+      // hang under the string (gravity with a little downwind lift), perpendicular to it, so flags on a steep
+      // line still show their face instead of collapsing onto the string
+      const lift = 0.3 + (R() - 0.5) * 0.12;
+      const hang = V(0, -1, 0).addScaledVector(WIND_DIR, lift);
+      hang.addScaledVector(tng, -hang.dot(tng)).normalize();
       const col = CP.lungta[idx % 5];
       const ph = R();
       hangPanel(cloth, a.p, b.p, hang, 0.22, col, 1, ph, 4 * a.s * (1 - a.s), 4 * b.s * (1 - b.s), 2, 2);
@@ -214,7 +219,10 @@ export function buildFlags({ solids, cloth, tentTip, cairnTop }) {
 // khata: a white scarf tied to the top of a stick, hanging and lifting downwind
 export function khata(cloth, top, len = 0.42) {
   const out = WIND_DIR.clone().multiplyScalar(0.35).add(new THREE.Vector3(0, -1, 0)).normalize();
-  const side = new THREE.Vector3().crossVectors(out, new THREE.Vector3(0, 1, 0)).normalize();
-  const a = top.clone().addScaledVector(side, -0.04), b = top.clone().addScaledVector(side, 0.04);
+  // the scarf's width runs along screen-right at the default view (az 45°), so its broad face is seen,
+  // not its edge
+  const side = new THREE.Vector3(1, 0, -1).normalize();
+  side.addScaledVector(out, -side.dot(out)).normalize();
+  const a = top.clone().addScaledVector(side, -0.05), b = top.clone().addScaledVector(side, 0.05);
   hangPanel(cloth, a, b, out, len, CP.khata, 3, 0.4, 0, 0, 1, 5);
 }

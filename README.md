@@ -17,7 +17,7 @@ Style inspired by [shawn (@zzzzshawn)](https://x.com/zzzzshawn)'s *Small plays* 
 
 ## How it works
 
-- `gorshey/js/render.js` renders the three.js scene into a low-resolution target (one texel = one art pixel),
+- `js/render.js` renders the three.js scene into a low-resolution target (one texel = one art pixel),
   then upscales it with nearest sampling, banding the luma with a 4×4 ordered dither and shifting darks cool
   and highlights warm. The camera fits the patch to ~87 % of the frame width on square and portrait screens.
 - The meadow base dissolves into the page with Bayer-dithered discards; grass is ~60k one-pixel blades.
@@ -26,13 +26,13 @@ Style inspired by [shawn (@zzzzshawn)](https://x.com/zzzzshawn)'s *Small plays* 
 - Modules: `ground` (meadow, grass, flowers), `fire` (pit, flames, sparks, smoke, firelight), `dancers`
   (rig, footstep planner, choreography), `camp` (tent, prayer flags, mani stones, sangbum, woodpile),
   `life` (musician, grandmother, girl, tea table, yak, dog). Shared helpers live in `core.js`.
-- The circle's direction is one constant: `DIR` in `gorshey/js/dancers.js` (1 = clockwise from above).
+- The circle's direction is one constant: `DIR` in `js/dancers.js` (1 = clockwise from above).
 
 ## Run locally
 
 ```bash
 python3 -m http.server 8787
-# open http://localhost:8787/gorshey/
+# open http://localhost:8787/
 ```
 
 Useful query options: `?mode=night`, `?only=ground,fire`, `?t=12&static=1`, `?zoom=3&cx=0&cz=2`, `?az=135`.

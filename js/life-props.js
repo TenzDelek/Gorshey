@@ -94,14 +94,16 @@ function mergeAll(geos) {
 
 // ---- tea table set ----------------------------------------------------------------------------------
 const TC = {
-  lacquer: 0x8c2f22, lacquerDk: 0x6a2219, gold: 0xc79a3c, green: 0x3f7350, blue: 0x2f5487, red: 0xa83a2c,
+  // painted a warm ochre-orange (not the rug's deep red) so at 1x the table reads apart from the rug beside it
+  lacquer: 0xb0622a, lacquerDk: 0x7a3a1c, gold: 0xc79a3c, green: 0x3f7350, blue: 0x2f5487, red: 0xa83a2c,
   pink: 0xd48a9a, pinkDk: 0xb86d7f, chrome: 0xc2c0b8, flowerR: 0xb8323c, flowerY: 0xe0bb4c, leaf: 0x4a7a3c,
   porcelain: 0xe6e0d2, porcelainBlue: 0x4a6aa0, silver: 0xbab6ac, tea: 0xd2b48c, teaDk: 0xb48e62,   // butter tea: pale caramel-beige
   bowlWood: 0x7a4a2a, brass: 0xc29a48, brassDk: 0x9a7432, copper: 0xa8683a, chang: 0xe2dcc6,
   plate: 0xe2ddd0, khapse: 0xcf9a46, khapseDk: 0xa8742e,
-  churn: 0x74492a, churnDk: 0x5a3820,
+  churn: 0x86552f, churnDk: 0x67402a,
 };
-// Table: long axis along local z (0.72 m), depth along x (0.42 m), top at 0.38 m.
+// Table: long axis along local z (0.72 m), depth along x (0.42 m), top at 0.38 m. LAYOUT.teaTable turns local z
+// along the rug's length and local -x toward the rug.
 export function buildTeaSet() {
   const S = new StaticSet();
   const L = 0.72, D = 0.42, H = 0.38, top = 0.035;
@@ -177,13 +179,15 @@ export function buildTeaSet() {
   const kh = [[-0.03, -0.02, 0.4, 0], [0.03, -0.01, -0.5, 0], [0.0, 0.03, 1.2, 0], [-0.02, 0.01, 2.1, 1], [0.025, 0.02, 0.2, 1], [0.0, -0.01, -1.0, 2]];
   for (const [x, z, r, lv] of kh) S.add(gBox(0.07, 0.022, 0.034, kx + x, y0 + 0.024 + lv * 0.02, kz + z, 0, r, 0.15), lv === 1 ? TC.khapseDk : TC.khapse);
 
-  // dongmo: tall wooden butter-tea churn with brass bands and its plunger, standing on the grass behind
-  // the table's outer corner (far, -x side; never on the rug), inside the tea footprint (hx 0.45, hz 0.75)
-  const cx = -(D / 2 + 0.06), cz = L / 2 + 0.1, ch = 0.78;
-  S.add(paintSegments(gCyl(0.075, 0.08, ch, 8, cx, ch / 2, cz), [TC.churn, TC.churnDk, TC.churn, TC.churn, TC.churnDk, TC.churn, TC.churn, TC.churnDk], TC.churn));
-  for (const by of [0.05, 0.3, 0.55, 0.76]) S.add(gCyl(0.082 + (by < 0.1 ? 0.004 : 0), 0.082 + (by < 0.1 ? 0.004 : 0), 0.028, 8, cx, by, cz), TC.brass);
-  S.add(gCyl(0.012, 0.012, 0.28, 5, cx, ch + 0.12, cz), TC.churnDk);
-  S.add(gBox(0.022, 0.022, 0.13, cx, ch + 0.26, cz), TC.churnDk);
+  // dongmo: wooden butter-tea churn with brass bands and its plunger, standing on the grass past the
+  // table's back (-z) end (toward the rug's far end; never on the rug), inside the tea footprint
+  // (hx 0.45, hz 0.75), so on screen it rises to the left of the grandmother's wheel, not behind anyone.
+  // Kept short and wide (~5 art px across) with three pale brass bands, so at 1x it reads as a vessel, not a post.
+  const cx = -0.05, cz = -(L / 2 + 0.37), ch = 0.62;
+  S.add(paintSegments(gCyl(0.098, 0.104, ch, 8, cx, ch / 2, cz), [TC.churn, TC.churnDk, TC.churn, TC.churn, TC.churnDk, TC.churn, TC.churn, TC.churnDk], TC.churn));
+  for (const by of [0.04, 0.31, 0.6]) S.add(gCyl(0.11, 0.11, 0.035, 8, cx, by, cz), TC.brass);
+  S.add(gCyl(0.013, 0.013, 0.22, 5, cx, ch + 0.09, cz), TC.churnDk);
+  S.add(gBox(0.024, 0.024, 0.15, cx, ch + 0.2, cz), TC.churnDk);
 
   return S.build(woodMat(), 'teaset');
 }
