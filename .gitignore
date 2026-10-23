@@ -1,0 +1,6 @@
+node_modules/
+shots/
+# reference frames captured from shawn's videos (his work, kept local only)
+ref/*.png
+.DS_Store
+*.mp4

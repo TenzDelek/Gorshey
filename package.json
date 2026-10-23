@@ -1,0 +1,13 @@
+{
+  "name": "creative-vibe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8787",
+    "shot": "node tools/shot.mjs",
+    "video": "node tools/capture.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.54.2"
+  }
+}
