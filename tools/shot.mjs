@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, arr) => (v.startsWith('--') ? [...a, [v.slice(2), arr[i + 1]?.startsWith('--') || arr[i + 1] === undefined ? '1' : arr[i + 1]]] : a), []));
-const base = args.base ?? 'http://localhost:8787/gorshey/index.html';
+const base = args.base ?? 'http://localhost:8787/index.html';
 const q = args.q ?? '';
 const times = (args.t ?? '3').split(',').map(Number);
 const out = args.out ?? 'shot';

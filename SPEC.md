@@ -41,16 +41,16 @@ shadows, no thick black outlines, white space all around.
 ## Files and owners
 
 ```
-gorshey/index.html      page + import map (three r170 from jsDelivr)          integration
-gorshey/js/main.js      boot, loop, modules, drag-to-turn, theme sync          integration
-gorshey/js/render.js    pixel pipeline, camera framing, lights                 integration
-gorshey/js/core.js      shared helpers, LAYOUT, FOOTPRINTS, PAL, CLEAR, GLSL   integration (ask in your report)
-gorshey/js/base.js      flat test-bed patch (?only=base,<module>)              integration
-gorshey/js/ground.js    meadow base, grass, flowers, trampled ring             ground
-gorshey/js/fire.js      fire pit, flames, sparks, smoke, fire light            fire
-gorshey/js/dancers.js   twelve dancers + choreography                          dancers
-gorshey/js/camp.js      lingka tent, prayer flags + pole, mani stones, sangbum, woodpile   camp
-gorshey/js/life.js      musician w/ dranyen, elder w/ prayer wheel, girl, rug, tea table + thermos, yak, dog   life
+index.html      page + import map (three r170 from jsDelivr)          integration
+js/main.js      boot, loop, modules, drag-to-turn, theme sync          integration
+js/render.js    pixel pipeline, camera framing, lights                 integration
+js/core.js      shared helpers, LAYOUT, FOOTPRINTS, PAL, CLEAR, GLSL   integration (ask in your report)
+js/base.js      flat test-bed patch (?only=base,<module>)              integration
+js/ground.js    meadow base, grass, flowers, trampled ring             ground
+js/fire.js      fire pit, flames, sparks, smoke, fire light            fire
+js/dancers.js   twelve dancers + choreography                          dancers
+js/camp.js      lingka tent, prayer flags + pole, mani stones, sangbum, woodpile   camp
+js/life.js      musician w/ dranyen, elder w/ prayer wheel, girl, rug, tea table + thermos, yak, dog   life
 tools/*.mjs             shot.mjs, capture.mjs, motion-probe.mjs, imgdiff.mjs   integration
 ```
 

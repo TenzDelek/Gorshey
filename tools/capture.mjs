@@ -12,7 +12,7 @@ const size = +(args.size ?? 1080);
 const fps = +(args.fps ?? 30);
 const mode = args.mode ?? 'day';
 const out = path.resolve(args.out ?? `gorshey-${mode}.mp4`);
-const base = args.base ?? 'http://localhost:8787/gorshey/index.html';
+const base = args.base ?? 'http://localhost:8787/index.html';
 const extra = args.q ? '&' + args.q : '';
 
 const browser = await chromium.launch({
