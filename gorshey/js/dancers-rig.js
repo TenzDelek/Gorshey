@@ -77,8 +77,15 @@ export function personDims(spec) {
   const upper = H * 0.18, fore = H * 0.152;
   const wristY = shY - upper - fore;
   const hipX = 0.083 * kw;
-  return { H, child, m, kw, headH, headW, headD, neck, headBase, shY, hipsY, hipJ, ankle, legLen, thigh, shin, kneeY, waistY, chestY, torsoW, torsoD, armT, shX, upper, fore, wristY, hipX };
+  // sole box (see the foot below): toe edge and heel edge in front of / behind the ankle, along +z
+  const footK = child ? 0.85 : 1;
+  const toeZ = 0.055 + 0.12 * footK, heelZ = 0.055 - 0.12 * footK;
+  // the men's empty right sleeve, tucked under the sash at the right hip
+  const hang = { x: -torsoW / 2 - 0.03, y: waistY, z: -0.03, L: Math.min(0.45, H * 0.26) };
+  return { H, child, m, kw, headH, headW, headD, neck, headBase, shY, hipsY, hipJ, ankle, legLen, thigh, shin, kneeY, waistY, chestY, torsoW, torsoD, armT, shX, upper, fore, wristY, hipX, toeZ, heelZ, hang };
 }
+// sleeve bones below the wrist (bind-pose y): most of a long sleeve hangs free of the hand
+const sleeveJoints = (wristY, ext) => [wristY - Math.max(0.04, ext * 0.2), wristY - Math.max(0.1, ext * 0.55)];
 
 // ---- geometry helpers -----------------------------------------------------------------
 function skinAttr(geo, wfn) {
@@ -120,6 +127,25 @@ class Parts {
     if (rot) g.applyMatrix4(_m4.makeRotationFromEuler(_eu.set(rot[0], rot[1], rot[2])));
     g.translate(x, y, z);
     return this.push(g, color, wfn);
+  }
+  // box tapering from w0 x d0 at yTop to w1 x d1 at yBot (a sleeve end), centred on x, z
+  taper(w0, d0, w1, d1, yTop, yBot, x, z, color, wfn, hs = 4) {
+    const g = new THREE.BoxGeometry(1, 1, 1, 1, hs, 1);
+    const p = g.attributes.position;
+    for (let v = 0; v < p.count; v++) {
+      const k = p.getY(v) + 0.5;   // 0 bottom .. 1 top
+      p.setXYZ(v, x + p.getX(v) * lerp(w1, w0, k), yBot + k * (yTop - yBot), z + p.getZ(v) * lerp(d1, d0, k));
+    }
+    return this.push(g, color, wfn);
+  }
+  // darken the faces that become the underside of a raised arm (back and inner faces in the bind pose)
+  underside(g, sgn, k = 0.78) {
+    const n = g.attributes.normal, c = g.attributes.color;
+    for (let v = 0; v < n.count; v++) {
+      const f = n.getZ(v) < -0.5 ? k : n.getX(v) * sgn < -0.5 ? (1 + k) / 2 : 1;
+      if (f !== 1) c.setXYZ(v, c.getX(v) * f, c.getY(v) * f, c.getZ(v) * f);
+    }
+    return g;
   }
   // elliptic (octagonal) frustum from yTop to yBot, flat face to the front
   frustum(rxT, rzT, rxB, rzB, yTop, yBot, color, wfn, hs = 3, z0 = 0) {
@@ -289,17 +315,21 @@ export function makePerson(spec) {
     const ext = shirtArm ? 0 : (spec.sleeve ?? (m ? 0.16 : 0.36));
     const t = shirtArm ? D.armT * 0.92 : D.armT * (m ? 1.05 : 1);
     const top = shY + 0.045;
-    const e1 = wristY - Math.max(0.06, ext * 0.36), e2 = wristY - Math.max(0.12, ext * 0.68);
+    const [e1, e2] = sleeveJoints(wristY, ext);
     const joints = [[BI['arm' + S], top + 1], [BI['fore' + S], shY - upper], [BI['hand' + S], wristY], [BI['slv' + S + '1'], e1], [BI['slv' + S + '2'], e2]];
     const aw = chainW(joints, 0.03);
     // shoulder cap (clavicle) so raised arms do not open a gap
     P.box(t + 0.01, 0.06, t + 0.01, x - sgn * 0.01, shY + 0.01, 0, m && !shirtArm ? chuba : (m ? shirt : chuba), BI['clav' + S]);
-    const len = top - (wristY - ext);
-    P.box(t, len, t, x, top - len / 2, 0, col, aw, null, 10);
+    // upper arm + forearm (2 art px), underside a ramp step darker
+    const armLen = top - wristY + (ext > 0.05 ? 0.012 : 0);
+    P.underside(P.box(t, armLen, t, x, top - armLen / 2, 0, col, aw, null, 6), sgn);
     if (ext > 0.05) {
-      // the free end of the sleeve flares a little; men's chuba cuff shows the lining
-      const cuff = m ? lining : shade(blouse, 0.9);
-      P.box(t + 0.018, 0.05, t + 0.018, x, wristY - ext + 0.025, 0, cuff, aw);
+      // the free sleeve: flat cloth tapering to one art px; women's ends a shade darker, men's cuff shows the lining
+      const tipW = m ? t * 0.78 : 0.042, tipD = m ? t * 0.7 : 0.03;
+      const yT = wristY + 0.004, yB = wristY - ext;
+      const body = m ? yB + 0.045 : yB + 0.04;
+      P.underside(P.taper(t, t * 0.85, lerp(t, tipW, 0.85), lerp(t * 0.85, tipD, 0.85), yT, body, x, 0, col, aw, 5), sgn);
+      P.underside(P.taper(lerp(t, tipW, 0.85), lerp(t * 0.85, tipD, 0.85), tipW, tipD, body + 0.002, yB, x, 0, m ? lining : shade(blouse, 0.86), aw, 1), sgn);
     }
     if (shirtArm || ext < 0.05) {
       P.box(0.065, 0.12, 0.05, x, wristY - 0.06, 0.005, skin, BI['hand' + S]);
@@ -308,11 +338,11 @@ export function makePerson(spec) {
 
   // ---------------------------------------------------------------- empty right sleeve (men), hanging from the waist
   if (m) {
-    const hx = -TW / 2 - 0.05, hy = waistY + 0.02, hz = -0.04;
-    const L = Math.min(0.6, D.H * 0.34);
+    // top end tucked under the sash at the right hip; a soft 2 x 1.5 px cloth strip, not a plank
+    const { x: hx, y: hy, z: hz, L } = D.hang;
     const hw = chainW([[BI.hang1, hy + 1], [BI.hang2, hy - L * 0.45]], 0.05);
-    P.box(0.11, L, 0.08, hx, hy - L / 2, hz, shade(chuba, 1.22), hw, null, 6);
-    P.box(0.115, 0.07, 0.085, hx, hy - L + 0.035, hz, lining, hw);
+    P.taper(0.08, 0.06, 0.07, 0.05, hy, hy - L + 0.05, hx, hz, shade(chuba, 1.22), hw, 6);
+    P.taper(0.07, 0.05, 0.068, 0.048, hy - L + 0.052, hy - L, hx, hz, lining, hw, 1);
   }
 
   // ---------------------------------------------------------------- neck + head
@@ -392,7 +422,7 @@ export function makePerson(spec) {
     clavR: [-0.05, shY, 0], armR: [-shX, shY, 0], foreR: [-shX, shY - upper, 0], handR: [-shX, wristY, 0],
     thighL: [hipX, hipJ, 0], shinL: [hipX, kneeY, 0], footL: [hipX, ankle, 0],
     thighR: [-hipX, hipJ, 0], shinR: [-hipX, kneeY, 0], footR: [-hipX, ankle, 0],
-    hang1: [-TW / 2 - 0.05, waistY + 0.02, -0.04], hang2: [-TW / 2 - 0.05, waistY + 0.02 - Math.min(0.6, D.H * 0.34) * 0.45, -0.04],
+    hang1: [D.hang.x, D.hang.y, D.hang.z], hang2: [D.hang.x, D.hang.y - D.hang.L * 0.45, D.hang.z],
     braidL1: [0.05, headBase + 0.05, -headD / 2 - 0.035], braidR1: [-0.05, headBase + 0.05, -headD / 2 - 0.035],
   };
   if (style === 'braid') rest.braidL1 = [0, headBase + 0.05, -headD / 2 - 0.035];
@@ -402,8 +432,9 @@ export function makePerson(spec) {
   for (const S of ['L', 'R']) {
     const ext = (m && S === 'R') ? 0 : (spec.sleeve ?? (m ? 0.16 : 0.36));
     const x = rest['hand' + S][0];
-    rest['slv' + S + '1'] = [x, wristY - Math.max(0.06, ext * 0.36), 0];
-    rest['slv' + S + '2'] = [x, wristY - Math.max(0.12, ext * 0.68), 0];
+    const [e1, e2] = sleeveJoints(wristY, ext);
+    rest['slv' + S + '1'] = [x, e1, 0];
+    rest['slv' + S + '2'] = [x, e2, 0];
   }
   const list = BONE_NAMES.map((n) => { const b = new THREE.Bone(); b.name = n; bones[n] = b; return b; });
   for (const n of BONE_NAMES) {

@@ -1,9 +1,13 @@
 # Gorshey · སྒོར་གཞས།
 
-A tiny animated pixel-art diorama of the Tibetan circle dance **gorshey**: twelve dancers in chuba circle a
-bonfire on a summer meadow, a musician plays the dranyen on a khaden rug while a grandmother turns her prayer
-wheel, a white lingka tent and lungta prayer flags stand behind, a yak grazes and a mastiff keeps watch.
-Light theme is a golden afternoon; dark theme is a firelit night. Drag to turn the diorama.
+A tiny animated pixel-art diorama of an imagined summer gathering on the Tibetan grassland. **Gorshey**
+(སྒོར་གཞས།) is a sung circle dance: the dancers form one ring and step around it while they sing, and each
+song has its own steps. Here twelve men, women, elders and children in chuba dance around a campfire at an
+evening lingka (a summer picnic); beside the ring a neighbour strums the dranyen on a khaden rug while a
+grandmother turns her prayer wheel, a white picnic tent and lungta prayer flags stand behind, a yak grazes
+and a mastiff keeps watch. The scene is a composite of a lingka picnic and a fireside gorshey: the fire and
+the lute belong to the evening, not to the dance, which is just as often danced in daylight around a jug of
+chang or to a speaker. Light theme is a golden afternoon; dark theme is a firelit night. Drag to turn the diorama.
 
 **Live:** https://tenzdelek.github.io/Gorshey/
 
@@ -13,7 +17,7 @@ Style inspired by [shawn (@zzzzshawn)](https://x.com/zzzzshawn)'s *Small plays* 
 
 - `gorshey/js/render.js` renders the three.js scene into a low-resolution target (one texel = one art pixel),
   then upscales it with nearest sampling, banding the luma with a 4×4 ordered dither and shifting darks cool
-  and highlights warm.
+  and highlights warm. The camera fits the patch to ~87 % of the frame width on square and portrait screens.
 - The meadow base dissolves into the page with Bayer-dithered discards; grass is ~60k one-pixel blades.
 - Every motion is a pure, integer-periodic function of time, so the 48 s loop (one full turn of the circle)
   is seamless.
@@ -38,6 +42,7 @@ npm install                       # playwright-core, drives your installed Googl
 node tools/shot.mjs --t 0,12 --out shots/frame --w 1080 --h 1080
 node tools/capture.mjs --mode day --out gorshey-day.mp4      # one seamless 48 s loop, needs ffmpeg
 node tools/capture.mjs --mode night --out gorshey-night.mp4
+node tools/motion-probe.mjs --report-only                    # foot / hip / arm checks for the dancers
 ```
 
 ## Cultural notes

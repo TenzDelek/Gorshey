@@ -5,8 +5,8 @@ import { patchMask } from './core.js';
 
 // ---- palette (sRGB hex, muted to sit with the finished grass and fire) -------------
 export const CP = {
-  canvas: 0xebe6da, canvasWarm: 0xe6ddca, liner: 0x3a322b, linerDeep: 0x2b2521,
-  appBlue: 0x26457f, appBlueDeep: 0x1d3566,
+  canvas: 0xc8c7c5, canvasWarm: 0xc8c3b8, liner: 0x3a322b, linerDeep: 0x2b2521,
+  appBlue: 0x3a5486, appBlueDeep: 0x2c4170,
   edgeRed: 0xb5463a, edgeYellow: 0xd9b24a, edgeGreen: 0x5e8a4a,
   pole: 0x6a4a30, poleDark: 0x4e3524, rope: 0x3b332c, ropeLight: 0x5a5046, brass: 0xc9a24a,
   // lungta: blue, white, red, green, yellow (sky, wind, fire, water, earth)
@@ -22,8 +22,6 @@ export const CP = {
   rugRed: 0x7a2a2a, rugBlue: 0x2b3a5c, rugGold: 0xb08a3e,
   cushion: 0x6e1f2a, cushion2: 0xa2742e,
 };
-
-export const WIND_DIR = new THREE.Vector3(1, 0, -0.55).normalize();
 
 // Move a point toward the fire until it sits inside the patch (mask >= minMask), at most maxStep metres.
 export function insidePatch(x, z, minMask = 0.62, maxStep = 0.8) {
@@ -126,4 +124,3 @@ export function jitter(geo, amt, seed = 0, keepBottom = true) {
   return geo;
 }
 
-export const glc = (hex) => { const c = new THREE.Color(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };

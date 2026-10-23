@@ -51,7 +51,7 @@ export function fbm2(x, y, oct = 4) {
 // ---- The diorama base -------------------------------------------------------
 // An irregular meadow patch. patchMask returns 1 well inside, falling to 0 past the rim,
 // with a noisy, organic outline. Ground, grass and props all use it so they agree.
-export const PATCH = { rx: 6.9, rz: 5.9, edge: 0.22, wobble: 0.34, freq: 0.32 };
+export const PATCH = { rx: 6.9, rz: 5.9, edge: 0.14, wobble: 0.34, freq: 0.32 };   // edge: rim band width (fraction of radius)
 export function patchRadius(x, z) {
   const r = Math.hypot(x / PATCH.rx, z / PATCH.rz);
   return r + (fbm2(x * PATCH.freq + 11.3, z * PATCH.freq - 4.7, 4) - 0.5) * PATCH.wobble;
@@ -62,36 +62,78 @@ export function patchMask(x, z) {
 
 // Where things live. Positions are [x, z]; ry is rotation about Y in radians.
 // The camera looks from +x,+z toward the origin, so "front" of the scene is +x/+z.
+// Object-local axes follow three.js: a point (u, v) in an object's local x/z maps to world
+//   x = pos.x + u·cos(ry) + v·sin(ry),   z = pos.z − u·sin(ry) + v·cos(ry).
 export const LAYOUT = {
   fire: [0, 0],
-  circle: { r: 2.55, count: 12 },          // dancers travel on this ring
+  circle: { r: 2.55, count: 12 },          // dancers travel on this ring (max reach ≈ 3.62 m from the centre)
   path: { r: 2.55, width: 0.9 },           // trampled earth ring under their feet
   tent: { pos: [-3.9, -3.3], ry: 0.62 },   // white lingka tent, back-left, door toward fire
-  flagPole: { pos: [3.7, -3.5] },          // tall pole with lungta lines, back-right
+  flagPole: { pos: [3.4, -3.2] },          // tall pole with lungta lines, back-right (base in full grass)
   flagAnchors: [[-3.9, -3.3], [5.4, -1.6], [1.0, -5.0]], // other ends of flag lines (tent peak + ground stakes)
-  rug: { pos: [4.25, 1.35], ry: -0.55 },   // carpet where the musician sits
-  musician: { pos: [4.45, 1.05], ry: -2.3 },// faces the dancers
-  teaTable: { pos: [3.85, 2.35], ry: -0.55 },// low painted chokse with thermos + cups
-  yak: { pos: [-4.7, 2.0], ry: 0.9 },
-  dog: { pos: [-2.6, -4.55], ry: 2.2 },
+  // The picnic group sits on the ring's LEFT FLANK (side-on to the camera, faces read in profile).
+  // Rug-local u (its length w) runs along world (0.707, 0.707), toward the camera; +v points away from
+  // the fire. Inner (fire-side) edge at r ≈ 3.86.
+  rug: { pos: [-3.2, 3.1], ry: -0.785, w: 1.92, d: 1.2 },
+  musician: { pos: [-3.15, 2.75], ry: 2.29 },   // seat on the rug's inner half, facing the fire (local +z forward)
+  teaTable: { pos: [-4.19, 2.11], ry: -0.785 }, // low painted chokse just past the rug's back (−u) short edge
+  // The yak is a profile foreground anchor at front-right. Model head is local +x → world (−0.707, 0.707),
+  // i.e. screen-left at the default azimuth (45°).
+  yak: { pos: [4.5, 1.65], ry: -2.36 },
+  dog: { pos: [-5.1, -0.75], ry: 0.79 },   // off the tent's left side, clear of its side guy-rope stake
   mani: { pos: [1.4, -4.9] },              // small carved mani-stone pile
   woodpile: { pos: [-1.2, 4.6] },
   sangbum: { pos: [-1.25, -4.2] },         // small whitewashed juniper-incense burner with a smoke curl
 };
 
-// Footprints where tall grass must not grow (x, z, radius). The dance ring is handled by LAYOUT.path.
+// Round footprints where tall grass must not grow: [x, z, radius]. CLEAR[0] is always the fire.
+// Every entry derives from LAYOUT (move a prop there and its clearing follows). The dance ring is LAYOUT.path.
+const at = (key, r) => [LAYOUT[key].pos[0], LAYOUT[key].pos[1], r];
 export const CLEAR = [
-  [0, 0, 1.05],                       // fire pit + ash
-  [-3.9, -3.3, 1.95],                 // tent floor
-  [4.25, 1.35, 1.05],                 // rug
-  [3.85, 2.35, 0.55],                 // tea table
-  [1.4, -4.9, 0.55],                  // mani stones
-  [-1.2, 4.6, 0.6],                   // woodpile
-  [3.7, -3.5, 0.3],                   // flag pole base
-  [-1.25, -4.2, 0.45],                // sangbum incense burner
+  [LAYOUT.fire[0], LAYOUT.fire[1], 1.05],   // fire pit + ash
+  at('tent', 1.75),                         // tent floor
+  at('rug', 1.0),                           // rug
+  at('teaTable', 0.5),                      // tea table
+  at('mani', 0.55),                         // mani stones
+  at('woodpile', 0.6),                      // woodpile
+  at('flagPole', 0.3),                      // flag pole base
+  at('sangbum', 0.45),                      // sangbum incense burner
 ];
 export function isClear(x, z, pad = 0) {
   for (const [cx, cz, r] of CLEAR) if (Math.hypot(x - cx, z - cz) < r + pad) return true;
+  return false;
+}
+
+// Shaped footprints (rect / ellipse in the object's local x/z) that press or remove grass.
+// k = blade-height multiplier inside (0 = no grass, 1 = untouched); `soft` m of falloff outside the shape;
+// ellipses may be offset along local x by cx. The grass owner (ground) applies these; life places on them.
+export const FOOTPRINTS = [
+  { id: 'rug', shape: 'rect', pos: LAYOUT.rug.pos, ry: LAYOUT.rug.ry, hx: LAYOUT.rug.w / 2 + 0.08, hz: LAYOUT.rug.d / 2 + 0.05, k: 0, soft: 0.1 },
+  { id: 'rugApron', shape: 'rect', pos: LAYOUT.rug.pos, ry: LAYOUT.rug.ry, hx: LAYOUT.rug.w / 2 + 0.38, hz: LAYOUT.rug.d / 2 + 0.35, k: 0.35, soft: 0.15 },
+  { id: 'tea', shape: 'rect', pos: LAYOUT.teaTable.pos, ry: LAYOUT.teaTable.ry, hx: 0.45, hz: 0.75, k: 0.15, soft: 0.12 },
+  { id: 'yak', shape: 'ellipse', pos: LAYOUT.yak.pos, ry: LAYOUT.yak.ry, hx: 1.75, hz: 0.9, cx: 0.3, k: 0.2, soft: 0.6 },
+  { id: 'dog', shape: 'ellipse', pos: LAYOUT.dog.pos, ry: LAYOUT.dog.ry, hx: 0.85, hz: 0.55, cx: 0.08, k: 0.15, soft: 0.5 },
+];
+// signed-ish distance (m) outside footprint f, <= 0 inside
+function footprintD(f, x, z) {
+  const dx = x - f.pos[0], dz = z - f.pos[1];
+  const c = Math.cos(f.ry ?? 0), s = Math.sin(f.ry ?? 0);
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  if (f.shape === 'rect') return Math.max(Math.abs(lx) - f.hx, Math.abs(lz) - f.hz);
+  return (Math.hypot((lx - (f.cx ?? 0)) / f.hx, lz / f.hz) - 1) * Math.min(f.hx, f.hz);
+}
+// Grass height multiplier at (x, z): 1 = untouched grass, 0 = no grass.
+export function footprintK(x, z) {
+  let k = 1;
+  for (const f of FOOTPRINTS) {
+    const w = 1 - smooth(0, f.soft, footprintD(f, x, z));
+    k = Math.min(k, 1 - (1 - f.k) * w);
+  }
+  return k;
+}
+// True when (x, z) lies inside any footprint grown by `pad` metres.
+export function inFootprint(x, z, pad = 0) {
+  for (const f of FOOTPRINTS) if (footprintD(f, x, z) < pad) return true;
   return false;
 }
 export function onPath(x, z) { // 0..1, 1 = centre of the trampled dance ring
@@ -117,7 +159,7 @@ export const PAL = {
   bootRed: 0x9c2a22, bootGreen: 0x2f5e4a, bootBlack: 0x1d1a1a,
   yak: 0x2a2320, yakLight: 0x4a3f38, horn: 0xd8d0bd,
 };
-// Pangden stripe sets (apron of married women): read top to bottom.
+// Pangden stripe sets: striped apron, mainly Ü-Tsang, associated with married/adult women (never men), read top to bottom.
 export const PANGDEN = [
   [0xc8322b, 0x2f63b8, 0xf1c232, 0x2f8a4a, 0xe07a2e, 0x6d3a8f, 0xf2f2ec],
   [0x2f8a4a, 0xc8322b, 0x2fb2a6, 0xf1c232, 0x23202a, 0xe07a2e],
@@ -129,7 +171,22 @@ export const U = {
   uTime: { value: 0 },
   uLoop: { value: LOOP },
   uNight: { value: 0 },  // 0 day, 1 night (eases between)
+  uArtPx: { value: 0.04 }, // one art pixel in world metres at zoom 1 (render.js updateCamera writes it)
 };
+
+// ---- Wind direction + colour helpers ----------------------------------------
+// Prevailing wind (world xz, normalised): flags, smoke and grass lean along it. GLSL: G_WIND_DIR.
+export const WIND_DIR = new THREE.Vector3(1, 0, -0.55).normalize();
+// 'vec3(r, g, b)' GLSL literal of an sRGB hex colour, in the linear working space (same as camp-lib glc).
+export function glslColor(hex) {
+  const c = new THREE.Color(hex);
+  return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`;
+}
+const _hA = new THREE.Color(), _hB = new THREE.Color();
+// Blend two hex colours (k = 0 → a, 1 → b) in the linear working space; returns a hex.
+export function mixHex(a, b, k) { return _hA.setHex(a).lerp(_hB.setHex(b), k).getHex(); }
+// Scale a hex colour's brightness by k (linear working space); returns a hex.
+export function shadeHex(hex, k) { return _hA.setHex(hex).multiplyScalar(k).getHex(); }
 
 // ---- GLSL snippets ----------------------------------------------------------
 export const GLSL = {
@@ -140,6 +197,8 @@ export const GLSL = {
     uniform float uTime;
     uniform float uLoop;
     uniform float uNight;
+    uniform float uArtPx;   // one art pixel in world metres at zoom 1
+    #define G_WIND_DIR vec3(${WIND_DIR.x.toFixed(4)}, 0.0, ${WIND_DIR.z.toFixed(4)})
     float cycP(float n) { return G_TAU * n * uTime / 24.0; } // n integer cycles per 24 s (LOOP = 48 s)
     float gHash12(vec2 p) {
       vec3 p3 = fract(vec3(p.xyx) * 0.1031);
