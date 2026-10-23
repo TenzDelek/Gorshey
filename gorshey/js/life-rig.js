@@ -5,7 +5,7 @@
 // figure costs 1 + 1 (sun) + 6 (fire cube faces at night) calls however many parts it has.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { mat } from './core.js';
+import { mat, glslColor } from './core.js';
 
 const M4 = new THREE.Matrix4(), EUL = new THREE.Euler(), QT = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -117,8 +117,9 @@ export class Rig {
     this.bones.push(bn); this.b[name] = bn;
     return bn;
   }
-  // add a coloured part rigidly bound to `bone`
-  add(bone, geo, hex) {
+  // add a coloured part rigidly bound to `bone`. rim = 1 flags the part for the night fire rim
+  // (rimClothMat: its fire-facing faces glow warm at night); `this.rim` sets the default for a run of parts.
+  add(bone, geo, hex, rim = this.rim ?? 0) {
     const g = hex === undefined ? prep(geo) : paint(geo, hex);
     const n = g.attributes.position.count;
     const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
@@ -126,6 +127,7 @@ export class Rig {
     for (let i = 0; i < n; i++) { si[i * 4] = bi; sw[i * 4] = 1; }
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
     g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    g.setAttribute('aRim', new THREE.Float32BufferAttribute(new Float32Array(n).fill(rim), 1));
     this.geos.push(g);
     return g;
   }
@@ -160,6 +162,30 @@ export class StaticSet {
 
 // Shared materials
 export const clothMat = () => mat(0xffffff, { vertexColors: true, grain: 0.05 });
+// Cloth with a night fire rim: parts flagged aRim = 1 get a warm emissive on the faces turned toward the
+// fire (world origin, flame height); aRim = 2 marks a thin strip that glows on whatever face shows (a face
+// edge seen side-on). Gated by uNight and scaled by uRimK (the fire flicker, set per frame). The flagged
+// parts are small or seen edge-on (face edges, hands, the dranyen), so the lit faces come out about one
+// art pixel wide.
+export function rimClothMat(uRimK, rimHex = 0xff9a48) {
+  return mat(0xffffff, {
+    vertexColors: true, grain: 0.05,
+    uniforms: { uRimK },
+    vertex: { head: 'attribute float aRim;\nvarying float vRim;', body: 'vRim = aRim;' },
+    fragment: {
+      head: 'varying float vRim;\nuniform float uRimK;',
+      body: /* glsl */`
+        {
+          vec3 gNw = normalize(cross(dFdx(vGWorld), dFdy(vGWorld)));
+          vec3 toF = normalize(vec3(0.0, 0.75, 0.0) - vGWorld);
+          // aRim 1: only faces turned toward the fire; aRim 2: a thin strip that glows whichever face shows
+          float rimF = (vRim > 1.5 ? 1.0 : step(0.5, vRim) * step(0.3, dot(gNw, toF))) * uNight * uRimK;
+          totalEmissiveRadiance += ${glslColor(rimHex)} * 0.45 * rimF;
+        }
+      `,
+    },
+  });
+}
 export const furMat = () => mat(0xffffff, { vertexColors: true, grain: 0.11, grainScale: 30 });
 export const woodMat = () => mat(0xffffff, { vertexColors: true, grain: 0.07, grainScale: 26 });
 

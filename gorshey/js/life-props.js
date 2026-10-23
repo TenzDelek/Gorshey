@@ -1,16 +1,17 @@
 // Rug (khaden) and the low painted tea table (choktse) with thermos, butter tea, chang and khapse,
 // plus a wooden butter-tea churn (dongmo).
 import * as THREE from 'three';
-import { mat, PAL } from './core.js';
+import { mat, LAYOUT, glslColor as glc } from './core.js';
 import { StaticSet, gBox, gCyl, gSeg, paint, paintSegments, woodMat } from './life-rig.js';
 
-const glc = (hex) => { const c = new THREE.Color(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };
-
 // ---- rug ----------------------------------------------------------------------------------------
-export const RUG = { w: 1.6, d: 1.0, h: 0.022 };
+// Size from LAYOUT.rug: w along local x (u, toward the camera), d along local z (v, away from the fire).
+export const RUG = { w: LAYOUT.rug.w, d: LAYOUT.rug.d, h: 0.022 };
 const RC = {
-  field: 0x8a2723, fieldDk: 0x74201e, indigo: 0x2b3866, indigoDk: 0x1f2747, saffron: 0xc98a2e, cream: 0xd9cdb0, edge: 0x2a2232,
+  field: 0x7e1f1f, indigo: 0x26345f, indigoDk: 0x1c2444, saffron: 0xc98a2e, cream: 0xd9cdb0,
 };
+// A clean shape at 1x: deep red field, a 2-art-px indigo border (~0.085 m), the round medallion in the
+// middle, and a short cream warp fringe on the two short ends.
 export function buildRug() {
   const { w, d, h } = RUG;
   const body = new THREE.BoxGeometry(w, h, d);
@@ -18,9 +19,9 @@ export function buildRug() {
   // fringe: flat strips beyond both short ends (threads cut out in the shader)
   const geos = [body.toNonIndexed()];
   for (const sx of [-1, 1]) {
-    const f = new THREE.PlaneGeometry(0.075, d * 0.94);
+    const f = new THREE.PlaneGeometry(0.06, d * 0.9);
     f.rotateX(-Math.PI / 2);
-    f.translate(sx * (w / 2 + 0.0375), 0.006, 0);
+    f.translate(sx * (w / 2 + 0.03), 0.006, 0);
     geos.push(f.toNonIndexed());
   }
   for (const g of geos) { g.deleteAttribute('uv'); }
@@ -28,59 +29,39 @@ export function buildRug() {
   const m = mat(RC.field, {
     grain: 0.0,
     fragment: {
-      head: /* glsl */`
-        float rStep(float a, float x) { return step(a, x); }
-      `,
+      head: '',
       body: /* glsl */`
         {
           vec2 p = vGLocal.xz;                          // u along the length, v across
           vec2 hs = vec2(${(w / 2).toFixed(3)}, ${(d / 2).toFixed(3)});
           vec2 ap = abs(p);
           vec3 c;
-          float h1 = gHash12(floor(p * 26.0) + 7.0);
+          float h1 = gHash12(floor(p * 24.0) + 7.0);
           if (ap.x > hs.x) {
-            // warp-thread fringe: cream threads with gaps, ragged ends
-            float th = step(0.45, fract(p.y * 30.0));
-            float len = (ap.x - hs.x) / 0.075;
-            if (th < 0.5 || len > 0.55 + 0.45 * gHash12(vec2(floor(p.y * 30.0), 3.0))) discard;
-            c = ${glc(RC.cream)} * (0.9 + 0.15 * h1);
+            // warp-thread fringe: cream threads with gaps
+            float th = step(0.5, fract(p.y * 24.0));
+            float len = (ap.x - hs.x) / 0.06;
+            if (th < 0.5 || len > 0.6 + 0.4 * gHash12(vec2(floor(p.y * 24.0), 3.0))) discard;
+            c = ${glc(RC.cream)};
           } else {
             float de = min(hs.x - ap.x, hs.y - ap.y);   // distance to the outer edge
-            if (de < 0.022) c = ${glc(RC.edge)};
-            else if (de < 0.12) {
-              // indigo border with a run of saffron key motifs
-              c = ${glc(RC.indigo)};
-              float s = (hs.x - ap.x < hs.y - ap.y) ? p.y : p.x;
-              float q = de - 0.022;
-              float m = step(abs(q - 0.049), 0.018) * step(fract(s / 0.085), 0.42);
-              m = max(m, step(abs(q - 0.049), 0.006));
-              if (m > 0.5) c = ${glc(RC.saffron)};
-            }
-            else if (de < 0.14) c = ${glc(RC.saffron)};
-            else if (de < 0.155) c = ${glc(RC.indigoDk)};
+            if (de < 0.088) c = ${glc(RC.indigo)};
             else {
-              // red field with abrash (row-wise dye variation)
-              c = mix(${glc(RC.field)}, ${glc(RC.fieldDk)}, step(0.62, gNoise2(vec2(p.x * 6.0, 0.5))));
-              // corner spandrels
-              vec2 cp = hs - vec2(0.155) - ap;
-              float cr = length(max(vec2(0.24, 0.17) - cp, 0.0) / vec2(0.24, 0.17));
-              float kc = length(cp / vec2(0.24, 0.17));
-              if (kc < 1.0) { c = ${glc(RC.indigo)}; if (kc > 0.8) c = ${glc(RC.saffron)}; }
-              // central medallion: a stepped round medallion, saffron ring, red heart, cream centre
-              float md = length(p / vec2(0.3, 0.22));
-              float lz = (ap.x / 0.36 + ap.y / 0.26);
-              if (md < 1.0 || lz < 0.82) {
+              c = ${glc(RC.field)};
+              // central medallion: indigo ring, saffron line, red heart, cream centre
+              float md = length(p / vec2(0.34, 0.26));
+              if (md < 1.0) {
                 c = ${glc(RC.indigo)};
-                if (md < 0.74) c = ${glc(RC.saffron)};
-                if (md < 0.58) c = ${glc(RC.field)};
-                if (lz < 0.28) c = ${glc(RC.cream)};
-                // four little saffron petals in the indigo ring
-                vec2 pp = p / vec2(0.3, 0.22);
-                float pet = step(0.86, abs(cos(atan(pp.y, pp.x) * 2.0))) * step(0.76, md) * step(md, 0.92);
+                if (md < 0.72) c = ${glc(RC.saffron)};
+                if (md < 0.56) c = ${glc(RC.field)};
+                if (md < 0.24) c = ${glc(RC.cream)};
+                // four saffron petals in the indigo ring
+                vec2 pp = p / vec2(0.34, 0.26);
+                float pet = step(0.9, abs(cos(atan(pp.y, pp.x) * 2.0))) * step(0.8, md) * step(md, 0.93);
                 if (pet > 0.5) c = ${glc(RC.saffron)};
               }
             }
-            c *= 0.93 + 0.12 * h1;                       // wool pile speckle
+            c *= 0.97 + 0.05 * h1;                       // faint wool pile, kept below one colour band
           }
           diffuseColor.rgb = c;
         }
@@ -115,7 +96,7 @@ function mergeAll(geos) {
 const TC = {
   lacquer: 0x8c2f22, lacquerDk: 0x6a2219, gold: 0xc79a3c, green: 0x3f7350, blue: 0x2f5487, red: 0xa83a2c,
   pink: 0xd48a9a, pinkDk: 0xb86d7f, chrome: 0xc2c0b8, flowerR: 0xb8323c, flowerY: 0xe0bb4c, leaf: 0x4a7a3c,
-  porcelain: 0xe6e0d2, porcelainBlue: 0x4a6aa0, silver: 0xbab6ac, tea: 0xc9a57a, teaDk: 0xb48e62,
+  porcelain: 0xe6e0d2, porcelainBlue: 0x4a6aa0, silver: 0xbab6ac, tea: 0xd2b48c, teaDk: 0xb48e62,   // butter tea: pale caramel-beige
   bowlWood: 0x7a4a2a, brass: 0xc29a48, brassDk: 0x9a7432, copper: 0xa8683a, chang: 0xe2dcc6,
   plate: 0xe2ddd0, khapse: 0xcf9a46, khapseDk: 0xa8742e,
   churn: 0x74492a, churnDk: 0x5a3820,
@@ -175,13 +156,13 @@ export function buildTeaSet() {
     S.add(gCyl(0.044, 0.03, 0.05, 8, x, y0 + 0.014 + 0.025, z), TC.porcelain);
     S.add(gCyl(0.0445, 0.0445, 0.01, 8, x, y0 + 0.056, z), TC.porcelainBlue);
     if (lid) { S.add(gCyl(0.03, 0.046, 0.018, 8, x, y0 + 0.07, z), TC.silver); S.add(gCyl(0.008, 0.012, 0.02, 6, x, y0 + 0.088, z), TC.silver); }
-    else S.add(gCyl(0.04, 0.04, 0.006, 8, x, y0 + 0.058, z), TC.tea);
+    else S.add(gCyl(0.038, 0.038, 0.004, 8, x, y0 + 0.0645, z), TC.tea);   // butter tea, just proud of the rim so it shows
   };
   cup(-0.1, -0.13, true);
   cup(0.12, 0.0, false);
   // wooden tea bowl, butter tea inside
   S.add(gCyl(0.055, 0.036, 0.045, 8, -0.08, y0 + 0.0225, 0.07), TC.bowlWood);
-  S.add(gCyl(0.05, 0.05, 0.006, 8, -0.08, y0 + 0.04, 0.07), TC.tea);
+  S.add(gCyl(0.047, 0.047, 0.004, 8, -0.08, y0 + 0.0465, 0.07), TC.tea);
   // chang jug: brass body, neck, spout, handle
   const jx = -0.02, jz = 0.23;
   S.add(gCyl(0.05, 0.062, 0.11, 8, jx, y0 + 0.055, jz), TC.brass);
@@ -196,8 +177,9 @@ export function buildTeaSet() {
   const kh = [[-0.03, -0.02, 0.4, 0], [0.03, -0.01, -0.5, 0], [0.0, 0.03, 1.2, 0], [-0.02, 0.01, 2.1, 1], [0.025, 0.02, 0.2, 1], [0.0, -0.01, -1.0, 2]];
   for (const [x, z, r, lv] of kh) S.add(gBox(0.07, 0.022, 0.034, kx + x, y0 + 0.024 + lv * 0.02, kz + z, 0, r, 0.15), lv === 1 ? TC.khapseDk : TC.khapse);
 
-  // dongmo: tall wooden butter-tea churn with brass bands and its plunger, standing at the table's end
-  const cx = 0.02, cz = L / 2 + 0.17, ch = 0.78;
+  // dongmo: tall wooden butter-tea churn with brass bands and its plunger, standing on the grass behind
+  // the table's outer corner (far, -x side; never on the rug), inside the tea footprint (hx 0.45, hz 0.75)
+  const cx = -(D / 2 + 0.06), cz = L / 2 + 0.1, ch = 0.78;
   S.add(paintSegments(gCyl(0.075, 0.08, ch, 8, cx, ch / 2, cz), [TC.churn, TC.churnDk, TC.churn, TC.churn, TC.churnDk, TC.churn, TC.churn, TC.churnDk], TC.churn));
   for (const by of [0.05, 0.3, 0.55, 0.76]) S.add(gCyl(0.082 + (by < 0.1 ? 0.004 : 0), 0.082 + (by < 0.1 ? 0.004 : 0), 0.028, 8, cx, by, cz), TC.brass);
   S.add(gCyl(0.012, 0.012, 0.28, 5, cx, ch + 0.12, cz), TC.churnDk);
