@@ -3,7 +3,7 @@
 // juniper with dried yak-dung patties stacked and heaped in a wicker basket.
 import * as THREE from 'three';
 import { LAYOUT, rng, glslColor as glc, mixHex } from './core.js';
-import { CP, M, jitter, insidePatch } from './camp-lib.js';
+import { CP, M, jitter } from './camp-lib.js';
 import { khata } from './camp-flags.js';
 
 // solid-material kinds (aK.x): 0 plain, 1 mani text face, 2 wicker, 3 wood, 4 glow, 5 rug, 6 brocade, 7 dung,
@@ -76,7 +76,9 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // ---- mani cairn -------------------------------------------------------------------------------
 export function buildMani({ solids, cloth }) {
   const R = rng(108);
-  const [cx, cz] = insidePatch(...LAYOUT.mani.pos, 0.6, 0.4);
+  // LAYOUT.mani sits ~1 m left of the flag pole on screen and well inside the patch (mask 1 at the centre,
+  // >= 0.66 under the outermost base stones), so the cairn stands exactly on its CLEAR circle
+  const [cx, cz] = LAYOUT.mani.pos;
   const W = new THREE.Matrix4().makeTranslation(cx, 0, cz);
   const at = (mm) => mm.premultiply(W);
   // one value step lighter than the field stones elsewhere, so the cairn reads against the grass;
@@ -133,9 +135,11 @@ export function buildMani({ solids, cloth }) {
   for (const [x, z, sz] of [[0.1, -0.06, 0.06], [-0.08, 0.1, 0.05], [0.12, 0.12, 0.045]]) {
     stone(jitter(new THREE.IcosahedronGeometry(1, 0), 0.25, x * 40, false), M(x, topY + sz * 0.5, z, x * 9, z * 7, 0, sz * 1.2, sz * 0.85, sz), CP.quartz);
   }
-  // stick with a khata
-  const stickTop = V(cx - 0.08, topY + 0.6, cz - 0.06);
-  solids.add(new THREE.CylinderGeometry(0.02, 0.024, 0.7, 4), M(cx - 0.08, topY + 0.25, cz - 0.06, 0.04, 0, -0.03), CP.poleDark, { aK: [3, 0, 0, 0] });
+  // stick with a khata, planted in the top of the pile on the side toward the flag pole; the third lungta
+  // line (LAYOUT.flagAnchors[2]) is tied to its tip
+  const sx0 = cx + 0.04, sz0 = cz - 0.07;
+  const stickTop = V(sx0, topY + 0.6, sz0);
+  solids.add(new THREE.CylinderGeometry(0.02, 0.024, 0.7, 4), M(sx0, topY + 0.25, sz0, 0.03, 0, -0.02), CP.poleDark, { aK: [3, 0, 0, 0] });
   khata(cloth, stickTop, 0.42);
   return { pos: [cx, cz], stickTop };
 }

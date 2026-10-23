@@ -70,7 +70,9 @@ export const LAYOUT = {
   path: { r: 2.55, width: 0.9 },           // trampled earth ring under their feet
   tent: { pos: [-3.9, -3.3], ry: 0.62 },   // white lingka tent, back-left, door toward fire
   flagPole: { pos: [3.4, -3.2] },          // tall pole with lungta lines, back-right (base in full grass)
-  flagAnchors: [[-3.9, -3.3], [5.4, -1.6], [1.0, -5.0]], // other ends of flag lines (tent peak + ground stakes)
+  // other ends of flag lines: the tent peak; a ground stake front-left of the pole (the darchog flies to screen-right,
+  // so a stake there keeps its line off the flag); the mani cairn's khata stick
+  flagAnchors: [[-3.9, -3.3], [4.0, -1.0], [0.5, -4.7]],
   // The picnic group sits on the ring's LEFT FLANK (side-on to the camera, faces read in profile).
   // Rug-local u (its length w) runs along world (0.707, 0.707), toward the camera; +v points away from
   // the fire. Inner (fire-side) edge at r ≈ 3.86.
@@ -81,7 +83,7 @@ export const LAYOUT = {
   // i.e. screen-left at the default azimuth (45°).
   yak: { pos: [4.5, 1.65], ry: -2.36 },
   dog: { pos: [-5.1, -0.75], ry: 0.79 },   // off the tent's left side, clear of its side guy-rope stake
-  mani: { pos: [1.4, -4.9] },              // small carved mani-stone pile
+  mani: { pos: [0.5, -4.7] },              // small carved mani-stone pile; ~1 m left of the flag pole on screen so the two don't stack
   woodpile: { pos: [-1.2, 4.6] },
   sangbum: { pos: [-1.25, -4.2] },         // small whitewashed juniper-incense burner with a smoke curl
 };
