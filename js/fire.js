@@ -340,41 +340,78 @@ export function build(ctx) {
   group.add(sparks);
 
   // ---------------------------------------------------------------- smoke
-  // A thin wisp that only shows high above the pit. The back row of the ring sits behind the column on
+  // A few small clumps that only show high above the pit. The back row of the ring sits behind the column on
   // screen, so the smoke is gated on the pixel's screen height above the pit base, expressed in metres of
   // height at the pit (hq). hq = view-space y relative to the pit, / cos(elevation), so it holds for any
   // azimuth and zoom. At the default 33° elevation the dancers behind the fire reach hq ≈ 3.52 m (raised
   // sleeves; hat tops ≈ 3.46 m) over the whole loop (shots/polish/fire/headsweep.mjs), so nothing below
   // SMOKE_G0 is drawn.
   const SMOKE_G0 = 3.58, SMOKE_G1 = 3.85;
-  const NM = 14;
-  const smokeGeo = new THREE.IcosahedronGeometry(1, 1);
+  // Smoke is a few soft clumps, not a thin veil: each clump is a small cluster of 3 blobs (widened spheres,
+  // 2–4 art px tall). A blob's dither coverage is aFade (its core density, 1: no fixed dither holes, which
+  // read as lace at night) inside and falls to 0 over its outermost ~1 art px (SMOKE_EDGE), measured on screen from the
+  // blob's projected centre, so a clump reads as one solid-ish soft shape that only breaks into single
+  // pixels at its rim. Overlapping blobs share the Bayer threshold, so the depth test makes their coverage a
+  // union (max), never a sum. Clumps grow in, swell, and dissolve by shrinking (density stays high).
+  // The sangbum smoke (camp.js) is meant to follow this recipe; only the colours differ.
+  const SMOKE_EDGE = 0.95;                // art px of falloff at each blob's silhouette (≈ its outer pixel ring)
+  const SMOKE_WIDE = 1.25;                // blobs are this much wider than tall
+  const SMOKE_LUMP = 2.4;                 // art px of outline noise (cells ≈ 3.5 art px, wider than the falloff)
+  const NC = 5, NBL = 3, NM = NC * NBL;   // clumps × blobs per clump
+  const SMOKE_DAY = 0xcdc6bb, SMOKE_DAY_SHADE = 0xbdb6ad;   // day: the sangbum's light warm grey register
+  // lives per 48 s loop for each clump (6.9 / 6 / 5.3 / 6.9 / 5.3 s): integer, so loop periodic; the mix lets
+  // clumps catch up with and pass each other instead of rising as an evenly spaced chain
+  const SMOKE_K = [7, 8, 9, 7, 9];
+  const PXW = 1 / (ctx.zoom > 0 ? ctx.zoom : 1);   // one art px in world m = uArtPx · PXW (zoom baked in, like camp)
+  // geometry 1.25× the blob's logical radius, so the lumpy outline can also bulge outward
+  const smokeGeo = new THREE.IcosahedronGeometry(1.25, 2);
   const smokeFade = new THREE.InstancedBufferAttribute(new Float32Array(NM).fill(0), 1);
   smokeGeo.setAttribute('aFade', smokeFade);
+  // per blob: world-height offset from its centre down to its clump's shade line (day underside)
+  const smokeShade = new THREE.InstancedBufferAttribute(new Float32Array(NM).fill(-1), 1);
+  smokeGeo.setAttribute('aSmY', smokeShade);
   const smokeMat = mat(0xffffff, {
     flat: false, grain: 0.03, grainScale: 14, instFade: true,
+    vertex: {
+      head: 'attribute float aSmY; varying vec3 vSmC; varying float vSmR; varying float vSmS; varying float vSmY;',
+      // view-space centre, vertical radius and a per-instance seed of this blob (instances are spheres
+      // widened by SMOKE_WIDE on the ground plane, so on screen they are ellipses SMOKE_WIDE× as wide), and
+      // its clump's shade line as a view-space height offset from the centre
+      body: 'vSmC = (modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz; vSmR = length(instanceMatrix[1].xyz); vSmS = float(gl_InstanceID); vSmY = aSmY * viewMatrix[1].y;',
+    },
     fragment: {
-      head: '',
+      head: 'varying vec3 vSmC; varying float vSmR; varying float vSmS; varying float vSmY;',
       body: /* glsl */`
         {
           float hq = (-vViewPosition.y - (viewMatrix * vec4(${FX.toFixed(3)}, 0.0, ${FZ.toFixed(3)}, 1.0)).y) / max(viewMatrix[1].y, 0.2);
           float gate = smoothstep(${SMOKE_G0.toFixed(2)}, ${SMOKE_G1.toFixed(2)}, hq);
-          // denser in the middle of each puff, thin at its rim
-          float sf = clamp(normalize(vNormal).z, 0.0, 1.0);
-          if (vFade * gate * (0.25 + 0.95 * sf * sf) < gBayer4(gl_FragCoord.xy)) discard;
-          // cool grey, a touch lighter as it thins out higher up; mostly self-coloured so it reads as smoke
+          // art px from this pixel to the blob's (elliptic) silhouette, inward; a little value noise that
+          // travels with the blob makes the outline lumpy instead of a perfect dithered disc
+          float pxW = uArtPx * ${PXW.toFixed(4)};
+          vec2 dv = (-vViewPosition.xy - vSmC.xy) / pxW;
+          float rPx = vSmR / pxW;
+          float rim = rPx - length(vec2(dv.x * ${(1 / SMOKE_WIDE).toFixed(4)}, dv.y));
+          rim += (gNoise2(dv * 0.28 + vSmS * 7.31) - 0.5) * ${SMOKE_LUMP.toFixed(2)} * min(1.0, rPx / 2.5);
+          float cov = vFade * gate * clamp((rim + 0.3) / ${SMOKE_EDGE.toFixed(2)}, 0.0, 1.0);
+          if (cov < gBayer4(gl_FragCoord.xy)) discard;
+          // day: light warm grey like the sangbum's juniper smoke, with a darker underside below one shade
+          // line per clump (shared by its blobs, so no shade band crosses a clump); night: cool blue-grey, a
+          // touch lighter as it thins out higher up. Mostly self-coloured.
           float up = smoothstep(${SMOKE_G0.toFixed(2)}, 5.4, hq);
-          vec3 dayC = mix(${glc(0x6c7886)}, ${glc(0x8c96a2)}, up);
+          float under = step(dv.y, vSmY / pxW);
+          vec3 dayC = mix(${glc(SMOKE_DAY)}, ${glc(SMOKE_DAY_SHADE)}, under);
           vec3 nightC = mix(${glc(0x5d6680)}, ${glc(0x6e7896)}, up);
           vec3 c = mix(dayC, nightC, uNight);
-          diffuseColor.rgb = c * mix(0.3, 0.8, uNight);
-          totalEmissiveRadiance = c * mix(0.66, 0.32, uNight);
+          diffuseColor.rgb = c * mix(0.15, 0.8, uNight);
+          totalEmissiveRadiance = c * mix(0.92, 0.32, uNight);
         }`,
     },
   });
   const smoke = new THREE.InstancedMesh(smokeGeo, smokeMat, NM);
   smoke.castShadow = false; smoke.receiveShadow = false; smoke.frustumCulled = false;
   group.add(smoke);
+  const CLUMPS = Array.from({ length: NC }, (_, i) => ({ k: SMOKE_K[i], ph: i / NC + (R() - 0.5) * 0.1, s: 21.7 + i * 6.31 }));
+  const SIDE = new THREE.Vector3(-WZ, 0, WX);   // across the wind on the ground
 
   // ---------------------------------------------------------------- fire light
   const light = new THREE.PointLight(0xff9446, 1, 8.5, 1.0);
@@ -540,21 +577,44 @@ export function build(ctx) {
     });
     sparks.instanceMatrix.needsUpdate = true; sparks.instanceColor.needsUpdate = true; sparkFade.needsUpdate = true;
 
-    // smoke: a thin dithered wisp (≤ 3 art px wide where it appears) that widens, thins and leans downwind
-    for (let i = 0; i < NM; i++) {
-      const a = frac((t * 3) / LOOP + i / NM);
-      const y = 3.2 + a * 2.3;
-      const r = 0.04 + 0.32 * Math.pow(a, 1.6);
-      const drift = a * 0.8 + a * a * 1.1 * (0.75 + 0.25 * gust);
-      const wob = 0.1 * Math.sin(cyc(t, 5) + i * 2.1) * a;
-      P.set(WX * drift + wob, y, WZ * drift - wob * 0.5);
-      S.set(r, Math.max(r * 0.8, 0.1), r);
-      Q.setFromAxisAngle(AX.set(0, 1, 0), i * 1.3 + a * 1.5);
-      M.compose(P, Q, S);
-      smoke.setMatrixAt(i, M);
-      smokeFade.setX(i, lerp(0.25, 0.46, night) * smooth(0, 0.1, a) * (1 - smooth(0.4, 1, a)));
-    }
-    smoke.instanceMatrix.needsUpdate = true; smokeFade.needsUpdate = true;
+    // smoke: a few small clumps rising over the pit (above the gate) and leaning downwind. A clump grows in
+    // from nothing, swells a little and loosens as it rises, then shrinks away; its blobs drift apart.
+    // Per-life variation (size, rise, blob layout) comes from the life index, so it is loop periodic.
+    CLUMPS.forEach((cl, i) => {
+      const u = (t * cl.k) / LOOP48 + cl.ph;
+      const a = frac(u), ci = cycIndex(u, cl.k);
+      const h1 = hash2(cl.s, ci * 1.37 + 0.4), h2 = hash2(cl.s + 4.1, ci * 2.03 + 1.9), h3 = hash2(cl.s + 8.3, ci * 0.61 + 3.7);
+      // The column starts 4.32 m up and 1.12 m downwind: at the default view its first visible clump forms
+      // against the page right of the tent's roof corner and guy rope (screen x > 612 of 1080) and above the
+      // meadow's back rim; it ends a little short of the sangbum's plume.
+      const y = 4.32 + (1.35 + 0.35 * h2) * (0.75 * a + 0.25 * (1 - (1 - a) * (1 - a)));
+      const drift = 1.12 + a * 0.65 + a * a * 0.75 * (0.75 + 0.25 * gust);
+      const wob = 0.06 * Math.sin(cyc(t, 5) + i * 2.1 + a * 4) * (0.3 + a);
+      const side = (h3 - 0.5) * 0.24 + wob;
+      const cx = WX * drift + SIDE.x * side, cz = WZ * drift + SIDE.z * side;
+      const r0 = 0.15 * (0.85 + 0.3 * h1) * (0.6 + 0.5 * a) * Math.sqrt(smooth(0, 0.14, a)) * (1 - smooth(0.62, 1, a));
+      const dens = smooth(0, 0.06, a);   // solid core; the shrink at the end of life does the dissolving
+      const spread = 1 + 0.45 * a;
+      // layout (in units of the main blob's radius): a second blob beside it along the wind (on screen,
+      // left or right) and a smaller one sitting on top toward the other side, so a clump is a lumpy puff
+      // wider than tall rather than a round disc
+      const sg = h1 < 0.5 ? 1 : -1;
+      const shadeY = y - 0.4 * r0;   // the clump's flat shaded base: a little below the main blob's centre
+      for (let j = 0; j < NBL; j++) {
+        let along = 0, oy = 0, rs = 1;
+        if (j === 1) { along = sg * (1.15 + 0.3 * h3); oy = (h2 - 0.5) * 0.5; rs = 0.78; }
+        if (j === 2) { along = -sg * (0.3 + 0.45 * h3); oy = 0.62 + 0.25 * h2; rs = 0.66; }
+        const k = r0 * spread;
+        P.set(cx + WX * along * k, y + oy * k, cz + WZ * along * k);
+        const r = r0 * rs;
+        S.set(r * SMOKE_WIDE, r, r * SMOKE_WIDE);
+        M.compose(P, Q.identity(), S);
+        smoke.setMatrixAt(i * NBL + j, M);
+        smokeFade.setX(i * NBL + j, r > 1e-4 ? dens : 0);
+        smokeShade.setX(i * NBL + j, shadeY - P.y);
+      }
+    });
+    smoke.instanceMatrix.needsUpdate = true; smokeFade.needsUpdate = true; smokeShade.needsUpdate = true;
 
     // light: subtle by day, the main light at night; loop-periodic flicker and a little wander
     light.intensity = lerp(0.9, 9.5, night) * fl;
