@@ -118,7 +118,8 @@ export class Rig {
     return bn;
   }
   // add a coloured part rigidly bound to `bone`. rim = 1 flags the part for the night fire rim
-  // (rimClothMat: its fire-facing faces glow warm at night); `this.rim` sets the default for a run of parts.
+  // (rimClothMat: its fire-facing faces glow warm at night; rimFurMat also knows 3 = moon, 4 = both);
+  // `this.rim` sets the default for a run of parts.
   add(bone, geo, hex, rim = this.rim ?? 0) {
     const g = hex === undefined ? prep(geo) : paint(geo, hex);
     const n = g.attributes.position.count;
@@ -187,6 +188,42 @@ export function rimClothMat(uRimK, rimHex = 0xff9a48) {
   });
 }
 export const furMat = () => mat(0xffffff, { vertexColors: true, grain: 0.11, grainScale: 30 });
+// Fur with night light for the animals. At night the moon (sun light) comes from behind-right and the fire
+// sits behind the yak, so the camera side of both animals gets no direct light and would read as a black
+// block. Per-vertex aRim: 1 = warm on faces turned toward the fire; 3 = cool moonlit on faces turned up
+// toward the moon (the back, the hump, the tops of tufts); 4 = both. A faint cool sheen (uSheen) lifts every fur face one
+// band off black. All gated by uNight; the warm part is scaled by uRimK (the fire flicker).
+// Hulls flag only their top ring (aRim 3 above, 0 below), so the interpolated vRim sweeps 0 -> 3 across the
+// faces in between and would pass through the fire code (1) as a thin warm stripe: the fire flag is read from
+// a flat (per-triangle) copy instead, the moon edge from the interpolated one.
+// aRim -1 (o.liftK): a painted local colour on faces the sun never reaches (the tan points on the dog's camera
+// flank): by day a part of the albedo is added back as emissive, so the colour reads in the shade; off at night.
+export function rimFurMat(uRimK, o = {}) {
+  const k = (v) => v.toFixed(3);
+  return mat(0xffffff, {
+    vertexColors: true, grain: o.grain ?? 0.11, grainScale: o.grainScale ?? 30,
+    uniforms: { uRimK },
+    vertex: { head: 'attribute float aRim;\nvarying float vRim;\nflat varying float vRimF;', body: 'vRim = aRim; vRimF = aRim;' },
+    fragment: {
+      head: 'varying float vRim;\nflat varying float vRimF;\nuniform float uRimK;',
+      body: /* glsl */`
+        {
+          vec3 gNw = normalize(cross(dFdx(vGWorld), dFdy(vGWorld)));
+          vec3 toF = normalize(vec3(0.0, 0.75, 0.0) - vGWorld);
+          float fireEl = step(0.5, vRimF) * (1.0 - step(1.5, vRimF)) + step(3.5, vRimF);
+          float moonEl = step(2.5, vRim);
+          float wF = fireEl * step(0.3, dot(gNw, toF)) * uRimK;
+          // the moon (night sun, high and to screen-right): strongest on faces turned up toward it
+          float wM = moonEl * smoothstep(${k(o.moonY0 ?? 0.7)}, ${k(o.moonY1 ?? 0.95)}, dot(gNw, vec3(0.419, 0.838, -0.349)));
+          totalEmissiveRadiance += (${glslColor(o.warm ?? 0xff9a48)} * ${k(o.warmK ?? 0.35)} * wF
+            + ${glslColor(o.moon ?? 0x8a9cc8)} * ${k(o.moonK ?? 0.1)} * wM
+            + ${glslColor(o.sheen ?? 0x6878a0)} * ${k(o.sheenK ?? 0.025)}) * uNight;
+          ${o.liftK ? `totalEmissiveRadiance += diffuseColor.rgb * ${k(o.liftK)} * (1.0 - step(-0.5, vRimF)) * (1.0 - uNight);` : ''}
+        }
+      `,
+    },
+  });
+}
 export const woodMat = () => mat(0xffffff, { vertexColors: true, grain: 0.07, grainScale: 26 });
 
 // Reset every bone of a rig to its bind pose (call at the top of update).

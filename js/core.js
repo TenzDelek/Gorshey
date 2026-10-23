@@ -73,16 +73,17 @@ export const LAYOUT = {
   // other ends of flag lines: the tent peak; a ground stake front-left of the pole (the darchog flies to screen-right,
   // so a stake there keeps its line off the flag); the mani cairn's khata stick
   flagAnchors: [[-3.9, -3.3], [4.0, -1.0], [0.5, -4.7]],
-  // The picnic group sits on the ring's LEFT FLANK (side-on to the camera, faces read in profile).
-  // Rug-local u (its length w) runs along world (0.707, 0.707), toward the camera; +v points away from
-  // the fire. Inner (fire-side) edge at r ≈ 3.86.
-  rug: { pos: [-3.2, 3.1], ry: -0.785, w: 1.92, d: 1.2 },
-  musician: { pos: [-3.15, 2.75], ry: 2.29 },   // seat on the rug's inner half, facing the fire (local +z forward)
-  teaTable: { pos: [-4.19, 2.11], ry: -0.785 }, // low painted chokse just past the rug's back (−u) short edge
+  // The picnic group sits on the ring's LEFT FLANK. The rug's edges run (almost) along the world axes, so at
+  // the default azimuth it lies on the ground as a parallelogram like the meadow and the tent floor:
+  // rug-local u (its length w) runs along world (0.989, 0.149) (screen down-right), +v along (−0.149, 0.989)
+  // (screen down-left, away from the fire). Its nearest corner (the inner, fire-side one) is at r ≈ 3.84.
+  rug: { pos: [-4.6, 1.85], ry: -0.15, w: 1.8, d: 1.15 },
+  musician: { pos: [-3.94, 1.65], ry: 2.07 },   // seat by the rug's inner corner, facing the fire (local +z forward), dranyen in profile
+  teaTable: { pos: [-4.2, 2.92], ry: 1.42 },    // low painted chokse on the grass beside the rug's outer (+v) long edge, long axis along it
   // The yak is a profile foreground anchor at front-right. Model head is local +x → world (−0.707, 0.707),
   // i.e. screen-left at the default azimuth (45°).
   yak: { pos: [4.5, 1.65], ry: -2.36 },
-  dog: { pos: [-5.1, -0.75], ry: 0.79 },   // off the tent's left side, clear of its side guy-rope stake
+  dog: { pos: [-5.45, -0.45], ry: 0.79 },  // off the tent's left side, its nose ~0.45 m clear of the front-corner guy-rope stake
   mani: { pos: [0.5, -4.7] },              // small carved mani-stone pile; ~1 m left of the flag pole on screen so the two don't stack
   woodpile: { pos: [-1.2, 4.6] },
   sangbum: { pos: [-1.25, -4.2] },         // small whitewashed juniper-incense burner with a smoke curl
