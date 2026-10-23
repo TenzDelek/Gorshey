@@ -5,7 +5,7 @@ bonfire on a summer meadow, a musician plays the dranyen on a khaden rug while a
 wheel, a white lingka tent and lungta prayer flags stand behind, a yak grazes and a mastiff keeps watch.
 Light theme is a golden afternoon; dark theme is a firelit night. Drag to turn the diorama.
 
-**Live:** https://tenzdelek.github.io/creative-vibe/gorshey/
+**Live:** https://tenzdelek.github.io/Gorshey/
 
 Style inspired by [shawn (@zzzzshawn)](https://x.com/zzzzshawn)'s *Small plays* series. Built with Claude Code.
 
