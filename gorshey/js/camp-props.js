@@ -2,11 +2,12 @@
 // sangbum incense burner (its juniper smoke is animated in camp.js), and the woodpile of split
 // juniper with dried yak-dung patties stacked and heaped in a wicker basket.
 import * as THREE from 'three';
-import { LAYOUT, rng } from './core.js';
-import { CP, M, jitter, insidePatch, glc } from './camp-lib.js';
+import { LAYOUT, rng, glslColor as glc, mixHex } from './core.js';
+import { CP, M, jitter, insidePatch } from './camp-lib.js';
 import { khata } from './camp-flags.js';
 
-// solid-material kinds (aK.x): 0 plain, 1 mani text face, 2 wicker, 3 wood, 4 glow, 5 rug, 6 brocade, 7 dung
+// solid-material kinds (aK.x): 0 plain, 1 mani text face, 2 wicker, 3 wood, 4 glow, 5 rug, 6 brocade, 7 dung,
+// 8 cairn stone with a few 1-art-px whitewash / ochre dabs
 export const SOLID_GLSL = /* glsl */`
   varying vec4 vK;
   vec3 maniInk(float i) {
@@ -15,7 +16,7 @@ export const SOLID_GLSL = /* glsl */`
     if (i < 2.5) return ${glc(0xdcb64c)};
     if (i < 3.5) return ${glc(0x6a93c6)};
     if (i < 4.5) return ${glc(0xc4523f)};
-    return ${glc(0xe8e4d8)};
+    return ${glc(0x2a2a32)};            // HUM: dark ink
   }
 `;
 export const SOLID_FRAG = /* glsl */`
@@ -58,6 +59,10 @@ export const SOLID_FRAG = /* glsl */`
       if (dm < 0.07) c = ${glc(CP.rugBlue)} * 0.5;
     } else if (kind == 6.0) {
       c *= 0.85 + 0.3 * step(0.5, fract((vGWorld.x + vGWorld.z) * 9.0)) * step(0.4, h);
+    } else if (kind == 8.0) {
+      // painted cairn stones: sparse single-pixel dabs of whitewash and ochre on the faces turned up/out
+      float hm = gHash13(floor(vGWorld * 24.0) + vec3(17.0, 3.0, vK.y * 11.0));
+      if (hm > 0.935) c = hm > 0.97 ? ${glc(0xe9e4d6)} : ${glc(0xb0743e)};
     } else if (kind == 7.0) {
       c = mix(c, ${glc(CP.dungDry)}, step(0.8, h));
       c *= 0.9 + 0.2 * gHash13(floor(vGWorld * 40.0));
@@ -74,21 +79,31 @@ export function buildMani({ solids, cloth }) {
   const [cx, cz] = insidePatch(...LAYOUT.mani.pos, 0.6, 0.4);
   const W = new THREE.Matrix4().makeTranslation(cx, 0, cz);
   const at = (mm) => mm.premultiply(W);
-  const slates = [CP.slate, CP.slate2, CP.slate3];
-  const stone = (g, mm, col) => solids.add(g, at(mm), col, { aK: [0, 0, 0, 0] });
+  // one value step lighter than the field stones elsewhere, so the cairn reads against the grass;
+  // some stones carry a lighter sunlit top face and a few painted dabs
+  const lift = (hex) => mixHex(hex, 0xf2efe8, 0.16);
+  const slates = [CP.slate, CP.slate2, CP.slate3].map(lift);
+  const TOP = 0xb4b6b2;
+  let nTop = 0, nMark = 0;
+  const stone = (g, mm, col, { top = false, mark = false } = {}) => {
+    const aK = { aK: [mark ? 8 : 0, nMark, 0, 0] };
+    if (top) nTop++;
+    if (mark) nMark++;
+    solids.add(g, at(mm), top ? (i, p, n) => (n.y > 0.72 ? TOP : col) : col, aK);
+  };
   // base boulders
   for (let k = 0; k < 10; k++) {
     const a = (k / 10) * Math.PI * 2 + R() * 0.3, r = 0.3 + R() * 0.06;
     const s = 0.11 + R() * 0.05;
-    stone(jitter(new THREE.IcosahedronGeometry(1, 0), 0.22, k * 5.7, false), M(Math.cos(a) * r, s * 0.55, Math.sin(a) * r, R(), R() * 3, R(), s * 1.3, s * 0.9, s * 1.05), R() < 0.35 ? CP.fieldStone : slates[k % 3]);
+    stone(jitter(new THREE.IcosahedronGeometry(1, 0), 0.22, k * 5.7, false), M(Math.cos(a) * r, s * 0.55, Math.sin(a) * r, R(), R() * 3, R(), s * 1.3, s * 0.9, s * 1.05), R() < 0.35 ? lift(CP.fieldStone) : slates[k % 3], { mark: k % 3 === 1 });
   }
-  stone(jitter(new THREE.IcosahedronGeometry(1, 0), 0.2, 3.3, false), M(0, 0.16, 0, 0.2, 0.5, 0.1, 0.32, 0.2, 0.3), CP.slate3);
+  stone(jitter(new THREE.IcosahedronGeometry(1, 0), 0.2, 3.3, false), M(0, 0.16, 0, 0.2, 0.5, 0.1, 0.32, 0.2, 0.3), slates[2]);
   // flat slates stacked, getting smaller
   let y = 0.24;
   for (let k = 0; k < 8; k++) {
     const sc = 1 - k * 0.09;
     const w = 0.56 * sc + R() * 0.06, d = 0.44 * sc + R() * 0.05, t = 0.05 + R() * 0.025;
-    stone(jitter(new THREE.BoxGeometry(1, 1, 1, 2, 1, 2), 0.1, k * 9.1, false), M((R() - 0.5) * 0.05, y + t / 2, (R() - 0.5) * 0.05, (R() - 0.5) * 0.14, R() * 3, (R() - 0.5) * 0.14, w, t, d), slates[(k + 1) % 3]);
+    stone(jitter(new THREE.BoxGeometry(1, 1, 1, 2, 1, 2), 0.1, k * 9.1, false), M((R() - 0.5) * 0.05, y + t / 2, (R() - 0.5) * 0.05, (R() - 0.5) * 0.14, R() * 3, (R() - 0.5) * 0.14, w, t, d), slates[(k + 1) % 3], { top: k % 2 === 0, mark: k === 3 || k === 6 });
     y += t * 0.9;
   }
   const topY = y;
@@ -109,10 +124,10 @@ export function buildMani({ solids, cloth }) {
   // one more painted stone on the top
   {
     const m = at(M(0.02, topY + 0.02, 0.03, -0.1, 0.75, 0.04));
-    solids.add(new THREE.BoxGeometry(0.24, 0.04, 0.17), m.clone(), CP.slate2, { aK: [0, 0, 0, 0] });
+    solids.add(new THREE.BoxGeometry(0.24, 0.04, 0.17), m.clone(), slates[1], { aK: [0, 0, 0, 0] });
     const face = new THREE.PlaneGeometry(0.22, 0.15);
     face.rotateX(-Math.PI / 2); face.translate(0, 0.021, 0);
-    solids.add(face, m.clone(), CP.slate2, (i, p, n, l) => ({ aK: [1, l.x / 0.22 + 0.5, -l.z / 0.15 + 0.5, 1] }));
+    solids.add(face, m.clone(), slates[1], (i, p, n, l) => ({ aK: [1, l.x / 0.22 + 0.5, -l.z / 0.15 + 0.5, 1] }));
   }
   // white quartz stones offered on top
   for (const [x, z, sz] of [[0.1, -0.06, 0.06], [-0.08, 0.1, 0.05], [0.12, 0.12, 0.045]]) {

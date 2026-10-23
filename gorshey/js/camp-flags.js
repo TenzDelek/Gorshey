@@ -3,8 +3,8 @@
 // camera-facing ribbons; flags are small squares repeating blue, white, red, green, yellow along
 // every string, fluttering in the vertex shader (gWind + per-flag phase, wind (1, 0, -0.55)).
 import * as THREE from 'three';
-import { mat, GLSL, LAYOUT, rng, patchMask } from './core.js';
-import { CP, M, WIND_DIR, glc, insidePatch, jitter } from './camp-lib.js';
+import { mat, GLSL, LAYOUT, rng, WIND_DIR } from './core.js';
+import { CP, M, insidePatch, jitter } from './camp-lib.js';
 
 // cloth vertex format: aF = (kind, hang 0..1, phase, sag weight | ribbon side), aT = flutter normal | tangent, aUV
 // kinds: 0 string ribbon, 1 lungta flag, 2 darchog flag, 3 khata
@@ -43,28 +43,26 @@ function poleFlag(acc, base, out, w, h, color, kind, phase, nu = 5, nv = 10) {
   }
 }
 
-export function clothMaterial(uPx) {
+export function clothMaterial() {
   const m = mat(0xffffff, {
     vertexColors: true, grain: 0.04, grainScale: 30, side: THREE.DoubleSide,
-    uniforms: { uPx },
     vertex: {
       head: GLSL.wind + /* glsl */`
-        uniform float uPx;
         attribute vec4 aF; attribute vec3 aT; attribute vec2 aUV;
         varying vec4 vF; varying vec2 vUV;
       `,
       body: /* glsl */`
         {
           vF = aF; vUV = aUV;
-          vec3 wd = normalize(vec3(1.0, 0.0, -0.55));
+          vec3 wd = G_WIND_DIR;
           float g = gWind(transformed.xz);
           if (aF.x < 0.5) {
-            // 1-art-px ribbon: offset across the line in screen space
+            // 1-art-px ribbon: offset across the line in screen space (uArtPx = one art pixel at zoom 1)
             vec3 back = normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
             vec3 perp = cross(aT, back);
             float pl = length(perp);
             perp = pl > 1e-4 ? perp / pl : vec3(0.0, 1.0, 0.0);
-            transformed += perp * aF.w * uPx;
+            transformed += perp * aF.w * uArtPx;
             transformed += (wd * 0.8 + vec3(0.0, 0.25, 0.0)) * (aF.y * 0.035 * g);
           } else {
             float h = aF.y, ph = aF.z * 6.2831853;
@@ -198,7 +196,7 @@ export function buildFlags({ solids, cloth, tentTip, cairnTop }) {
     let idx = 0;
     for (let d = 0.28; d + FW < total - 0.15; d += PITCH, idx++) {
       const a = at(d), b = at(d + FW);
-      if (Math.min(a.p.y, b.p.y) < 0.9) break;     // flags never come near the ground
+      if (Math.min(a.p.y, b.p.y) - 0.22 < 0.9) break;     // flags (bottom edges included) stay above 0.9 m
       const tng = new THREE.Vector3().subVectors(b.p, a.p).normalize();
       // hang straight down, lifted a little downwind about the string
       const nrm = new THREE.Vector3().crossVectors(tng, V(0, -1, 0)).normalize();

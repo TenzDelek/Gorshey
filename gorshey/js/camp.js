@@ -4,9 +4,9 @@
 // Everything static is merged into three meshes (canvas, solids, cloth) plus one instanced smoke mesh,
 // so the module costs ~4 draw calls per pass. All motion is loop-periodic (cyc / integer k per 24 s).
 import * as THREE from 'three';
-import { mat, GLSL, CYC_BASE, cyc, wind, frac, smooth, lerp, U } from './core.js';
-import { Acc, CP, WIND_DIR } from './camp-lib.js';
-import { buildTent, canvasGLSL, CANVAS_FRAG } from './camp-tent.js';
+import { mat, GLSL, CYC_BASE, cyc, wind, frac, smooth, lerp, U, WIND_DIR } from './core.js';
+import { Acc } from './camp-lib.js';
+import { buildTent, canvasGLSL, CANVAS_FRAG, tentInteriorGLSL, TENT_INTERIOR_FRAG } from './camp-tent.js';
 import { buildFlags, clothMaterial, ribbon } from './camp-flags.js';
 import { buildMani, buildSangbum, buildWoodpile, SOLID_GLSL, SOLID_FRAG } from './camp-props.js';
 
@@ -25,34 +25,48 @@ export function build(ctx) {
   buildWoodpile({ solids });
 
   // ---- meshes ----
+  // The canvas is smooth-shaded with its baked panel normals (flat: false): the wind flex moves the
+  // outline but never re-shades a face, so each face stays one value band after the post pass.
+  const uGlow = { value: 1 };
   const canvasMat = mat(0xffffff, {
-    vertexColors: true, grain: 0.0,
+    vertexColors: true, grain: 0.0, flat: false,
     vertex: {
-      head: GLSL.wind + 'attribute vec2 aUV; attribute vec4 aP; varying vec2 vUV; varying vec4 vP;',
+      head: GLSL.wind + 'attribute vec2 aUV; attribute vec4 aP; varying vec2 vUV; varying vec4 vP; varying vec3 vNW;',
       body: /* glsl */`
         vUV = aUV; vP = aP;
+        vNW = normalize(mat3(modelMatrix) * objectNormal);
         if (aP.y > 0.0) {
           float g = gWind(transformed.xz);
           float w = 0.6 * g + 0.4 * sin(cycP(23.0) + aP.z * 6.2831853 + transformed.x * 1.7 - transformed.z * 1.1);
           transformed += normal * (aP.y * 0.028 * w);
         }`,
     },
-    fragment: { head: canvasGLSL(), body: CANVAS_FRAG },
+    fragment: { head: canvasGLSL(ctx.zoom ?? 1), body: CANVAS_FRAG },
   });
+  // firelight on the canvas: tint the point light (the fire) per fragment, see campFireTint
+  {
+    const base = canvasMat.onBeforeCompile;
+    canvasMat.onBeforeCompile = (sh, r) => {
+      base(sh, r);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin.replace(
+        'getPointLightInfo( pointLight, geometryPosition, directLight );',
+        'getPointLightInfo( pointLight, geometryPosition, directLight );\n\t\tdirectLight.color = campFireTint( directLight.color );'));
+    };
+  }
   canvasMat.shadowSide = THREE.DoubleSide;
   const canvasMesh = new THREE.Mesh(canvas.build(), canvasMat);
   canvasMesh.name = 'tent-canvas';
 
   const solidMat = mat(0xffffff, {
     vertexColors: true, grain: 0.07, grainScale: 27,
+    uniforms: { uGlow },
     vertex: { head: 'attribute vec4 aK; varying vec4 vK;', body: 'vK = aK;' },
-    fragment: { head: SOLID_GLSL, body: SOLID_FRAG },
+    fragment: { head: SOLID_GLSL + tentInteriorGLSL(tent.frame), body: SOLID_FRAG + TENT_INTERIOR_FRAG },
   });
   const solidMesh = new THREE.Mesh(solids.build(), solidMat);
   solidMesh.name = 'camp-solids';
 
-  const uPx = { value: 0.037 };
-  const clothMesh = new THREE.Mesh(cloth.build(), clothMaterial(uPx));
+  const clothMesh = new THREE.Mesh(cloth.build(), clothMaterial());
   clothMesh.name = 'camp-cloth';
   clothMesh.frustumCulled = false;
 
@@ -77,12 +91,10 @@ export function build(ctx) {
   const side = new THREE.Vector3(-WIND_DIR.z, 0, WIND_DIR.x);
   const Mx = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), AX = new THREE.Vector3(0, 1, 0);
 
-  const zoom = (() => { try { const z = parseFloat(new URLSearchParams(location.search).get('zoom')); return z > 0 ? z : 1; } catch { return 1; } })();
-
   function update(t, c) {
-    const cam = c?.camera, st = c?.R?.state;
-    if (cam && st) uPx.value = ((cam.top - cam.bottom) / st.lowH) * zoom;
     const night = U.uNight.value;
+    const fl = c?.shared?.fireFlicker;
+    uGlow.value = typeof fl === 'function' ? fl(t) : 1;
     const gust = wind(t, mouth.x, mouth.z);
     for (let i = 0; i < NS; i++) {
       const a = frac((t * 3) / CYC_BASE + i / NS);
@@ -102,6 +114,5 @@ export function build(ctx) {
     smokeMat.emissive.copy(SM_DAY_E).lerp(SM_NIGHT_E, night);
   }
   update(0, ctx);
-  ctx.shared.tent = { pos: [tent.frame.x, tent.frame.z], ry: tent.frame.ry };
   return { group, update };
 }
