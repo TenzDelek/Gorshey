@@ -6,6 +6,21 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+Tibetan:wght@500;700&family=Silkscreen&family=Young+Serif&display=swap">
+<!-- the import map must come before any module load, preloads included -->
+<script type="importmap">
+  { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  } }
+</script>
+<link rel="modulepreload" href="js/main.js">
+<link rel="modulepreload" href="js/core.js">
+<link rel="modulepreload" href="js/render.js">
+<link rel="modulepreload" href="js/ground.js">
+<link rel="modulepreload" href="js/fire.js">
+<link rel="modulepreload" href="js/dancers.js">
+<link rel="modulepreload" href="js/camp.js">
+<link rel="modulepreload" href="js/life.js">
 <style>
   /* Layout: one full-bleed diorama; a quiet caption bottom-left, two pixel-type controls bottom-right. */
   :root {
@@ -18,43 +33,51 @@
     --font-display: "Young Serif", "Iowan Old Style", Georgia, serif;
     --font-tibetan: "Noto Serif Tibetan", "Kailasa", "Microsoft Himalaya", serif;
     --font-pixel: "Silkscreen", ui-monospace, "SF Mono", Menlo, monospace;
+    --error-bg: #a3242a;    /* ?debug=1 error box */
+    --error-fg: #ffffff;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0e1220; --fg: #ece6da; --muted: #8e93a6; --accent: #f0a24a;
       --line: rgba(236, 230, 218, 0.18); --chip: rgba(14, 18, 32, 0.78); color-scheme: dark;
+      --error-bg: #c8453a; --error-fg: #ffffff;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0e1220; --fg: #ece6da; --muted: #8e93a6; --accent: #f0a24a;
     --line: rgba(236, 230, 218, 0.18); --chip: rgba(14, 18, 32, 0.78); color-scheme: dark;
+    --error-bg: #c8453a; --error-fg: #ffffff;
   }
   /* The scene's own day/night (the toggle can override the theme) keeps the page in step. */
   :root[data-scene="day"] {
     --bg: #fbfbf8; --fg: #23201d; --muted: #77716a; --accent: #8b1e2d;
     --line: rgba(35, 32, 29, 0.16); --chip: rgba(251, 251, 248, 0.82);
+    --error-bg: #a3242a; --error-fg: #ffffff; color-scheme: light;
   }
   :root[data-scene="night"] {
     --bg: #0e1220; --fg: #ece6da; --muted: #8e93a6; --accent: #f0a24a;
     --line: rgba(236, 230, 218, 0.18); --chip: rgba(14, 18, 32, 0.78);
+    --error-bg: #c8453a; --error-fg: #ffffff; color-scheme: dark;
   }
 
-  html, body { height: 100%; }
+  html, body { margin: 0; height: 100%; }
   body {
     background: var(--bg); color: var(--fg);
     font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    transition: background-color 0.6s ease, color 0.6s ease;
     overflow: hidden;
   }
-  .stage { position: relative; height: 100%; width: 100%; overflow: hidden; }
+  @media (prefers-reduced-motion: no-preference) {
+    html.ready body { transition: background-color 0.6s ease, color 0.6s ease; }   /* not on first paint */
+  }
+  .stage { position: relative; height: 100%; height: 100dvh; width: 100%; overflow: hidden; }
   #scene {
     display: block; position: absolute; inset: 0;
     image-rendering: pixelated; image-rendering: crisp-edges;
     cursor: grab; touch-action: pan-y; outline: none;
   }
   #scene.dragging { cursor: grabbing; }
-  #scene:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+  #scene:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
   .overlay {
     position: absolute; inset: auto 0 0 0;
@@ -95,35 +118,40 @@
   #errors {
     position: absolute; top: max(12px, env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
     margin: 0; padding: 8px 10px; max-width: calc(100% - 32px); overflow-x: auto;
-    font: 12px/1.4 ui-monospace, Menlo, monospace; color: #fff; background: #a3242a; white-space: pre-wrap;
+    font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--error-fg); background: var(--error-bg); white-space: pre-wrap;
   }
   @media (max-width: 520px) {
     .note { display: none; }
     .overlay { align-items: flex-start; flex-direction: column; }
+    .controls button { min-height: 44px; }
   }
 </style>
 
 <div class="stage">
-  <canvas id="scene" tabindex="0" aria-label="Animated pixel diorama: twelve dancers in chuba circle a bonfire on the Tibetan grassland while a musician plays the dranyen beside a white picnic tent and prayer flags. Drag or use the arrow keys to turn it."></canvas>
+  <canvas id="scene" tabindex="0" role="img" aria-label="Animated pixel diorama, an imagined composite of a summer lingka picnic and a fireside gorshey: twelve men, women, elders and children in chuba sing and step in a ring around a campfire on the Tibetan grassland, beside a dranyen player, a grandmother turning her prayer wheel, a white picnic tent, prayer flags, a yak and a mastiff. Drag or use the arrow keys to turn it."></canvas>
   <div class="loading">Lighting the fire…</div>
   <pre id="errors" hidden></pre>
   <div class="overlay">
     <div class="caption">
       <p class="eyebrow">Tibetan circle dance</p>
       <h1 class="name"><span class="latin">Gorshey</span><span class="bod" lang="bo">སྒོར་གཞས།</span></h1>
-      <p class="note">Dancers in chuba step and swing their sleeves around the fire while the dranyen plays. Drag to turn the circle.</p>
+      <p class="note">An imagined lingka gathering: friends sing and step the gorshey ring around a campfire while a neighbour strums the dranyen. Drag to turn the circle.</p>
     </div>
     <div class="controls">
-      <button id="toggle-night" type="button"><span class="dot" aria-hidden="true"></span>Day / Night</button>
-      <button id="toggle-play" type="button" aria-pressed="true"><span>Pause</span></button>
+      <button id="toggle-night" type="button" aria-pressed="false"><span class="dot" aria-hidden="true"></span>Day / Night</button>
+      <button id="toggle-play" type="button"><span>Pause</span></button>
     </div>
   </div>
 </div>
 
-<script type="importmap">
-  { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-  } }
+<script>
+  // Failure states: the module graph cannot load (CDN blocked, offline) or never finishes booting.
+  function gorsheyFail(msg) {
+    var root = document.documentElement, el = document.querySelector('.loading');
+    if (!el || root.classList.contains('ready') || root.classList.contains('failed')) return;
+    el.textContent = msg;
+    root.classList.add('failed');
+  }
+  setTimeout(function () { gorsheyFail('The diorama could not load. Try reloading the page.'); }, 15000);
 </script>
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js" onerror="gorsheyFail('The diorama could not load. Check your connection and reload.')"></script>

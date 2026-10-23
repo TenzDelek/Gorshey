@@ -18,8 +18,9 @@ const POST_FS = /* glsl */`
   uniform float uEdge;        // depth-edge darkening 0..1
   uniform float uEdgeThresh;  // depth difference that counts as an edge (0..1 depth units)
   uniform float uLevels;      // colour levels per channel
-  uniform float uDither;      // dither amplitude in levels
+  uniform float uDither;      // per-channel posterise dither amplitude in levels
   uniform float uBands;       // luma bands
+  uniform float uBandDither;  // dither amplitude at the luma band snap only (low = flat faces stay one tone)
   uniform float uBandMix;     // 0 = off, 1 = full banding
   uniform float uCool;        // cool shift in shadows
   uniform float uWarm;        // warm shift in highlights
@@ -56,7 +57,7 @@ const POST_FS = /* glsl */`
 
     // Banded value: snap luma to uBands steps, dithering each band boundary (toon ramp look).
     float L = max(dot(c, vec3(0.299, 0.587, 0.114)), 1e-4);
-    float Lq = (floor(L * uBands + 0.5 + b * uDither) ) / uBands;
+    float Lq = floor(L * uBands + 0.5 + b * uBandDither) / uBands;
     Lq = max(Lq, 0.5 / uBands);
     c *= mix(1.0, Lq / L, uBandMix);
     // Hue shift: darks go cool, highlights go warm.
@@ -80,15 +81,17 @@ export const MODES = {
     ambient: 0xffffff, ambientI: 0.15,
   },
   night: {
+    // neutral slate moonlight with a slight blue cast, so the fire's orange owns the colour
     bg: '#0e1220',
-    hemiSky: 0x33467a, hemiGround: 0x141820, hemi: 0.55,
-    sun: 0x9db2ff, sunI: 0.55, sunPos: [6, 12, -5],
-    ambient: 0x223055, ambientI: 0.2,
+    hemiSky: 0x3a4256, hemiGround: 0x15181e, hemi: 0.55,
+    sun: 0xa2aed0, sunI: 0.72, sunPos: [6, 12, -5],
+    ambient: 0x2a2f3c, ambientI: 0.2,
   },
 };
 
 export function createRenderer(canvas, opts = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: !!opts.preserve, powerPreference: 'high-performance' });
+  // The scene renders into `rt` (which has its own depth); the canvas only receives the post pass.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: !!opts.preserve, powerPreference: 'high-performance' });
   renderer.setPixelRatio(1); // we size the canvas in device pixels ourselves
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -98,7 +101,17 @@ export function createRenderer(canvas, opts = {}) {
   const bgColor = new THREE.Color();
 
   // Camera: orthographic, classic diorama angle. azimuth/elevation in radians.
-  const view = { azimuth: Math.PI / 4, elevation: THREE.MathUtils.degToRad(33), height: opts.viewHeight ?? 12.6, target: new THREE.Vector3(0, 0.55, 0.15) };
+  // Fit model: the visible height is hView = max(height, fitW / aspect) / zoom, so landscape frames keep
+  // `height` metres of scene vertically and square/portrait frames keep `fitW` metres horizontally.
+  // shiftY moves the content DOWN on screen by that fraction of the frame (the tall tent makes the patch
+  // read top-heavy); insets.bottom (CSS px, portrait only) centres the patch in the area above the caption.
+  // `centred` (close-ups: ?zoom/?cx/?cz) turns both off.
+  const view = {
+    azimuth: Math.PI / 4, elevation: THREE.MathUtils.degToRad(33),
+    height: opts.viewHeight ?? 12.6, fitW: opts.fitW ?? 15.2, zoom: 1, shiftY: 0.035,
+    insets: { bottom: 0 }, centred: false,
+    target: new THREE.Vector3(0, 0.55, 0.15),
+  };
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
 
   // Lights
@@ -106,7 +119,7 @@ export function createRenderer(canvas, opts = {}) {
   const ambient = new THREE.AmbientLight(0xffffff, 0.1);
   const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   const sc = sun.shadow.camera;
   sc.left = -9; sc.right = 9; sc.top = 9; sc.bottom = -9; sc.near = 0.5; sc.far = 40;
   sun.shadow.bias = -0.0008;
@@ -129,8 +142,8 @@ export function createRenderer(canvas, opts = {}) {
       tColor: { value: rt.texture }, tDepth: { value: depthTex },
       uRes: { value: new THREE.Vector2(1, 1) }, uBg: { value: new THREE.Vector3(1, 1, 1) },
       uEdge: { value: opts.edge ?? 0.0 }, uEdgeThresh: { value: 0.012 },
-      uLevels: { value: opts.levels ?? 24 }, uDither: { value: opts.dither ?? 0.85 },
-      uBands: { value: opts.bands ?? 11 }, uBandMix: { value: opts.bandMix ?? 0.85 },
+      uLevels: { value: opts.levels ?? 24 }, uDither: { value: opts.dither ?? 0.7 },
+      uBands: { value: opts.bands ?? 11 }, uBandMix: { value: opts.bandMix ?? 0.85 }, uBandDither: { value: opts.bandDither ?? 0.42 },
       uCool: { value: 0.55 }, uWarm: { value: 0.6 },
     },
     depthTest: false, depthWrite: false,
@@ -143,13 +156,13 @@ export function createRenderer(canvas, opts = {}) {
   postScene.add(postMesh);
   const postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  const state = { w: 1, h: 1, lowW: 1, lowH: 1, px: 3, rows: opts.rows ?? 380, mode: 'day', night: 0 };
+  const state = { w: 1, h: 1, cssW: 1, cssH: 1, lowW: 1, lowH: 1, px: 3, rows: opts.rows ?? 380, mode: 'day', night: 0 };
 
   function resize(wCss, hCss, dpr = window.devicePixelRatio || 1) {
     const w = Math.max(2, Math.round(wCss * dpr)), h = Math.max(2, Math.round(hCss * dpr));
-    state.w = w; state.h = h;
-    // integer art-pixel size so every art pixel is the same size on screen
-    state.px = Math.max(1, Math.round(Math.min(h, w * 0.9) / state.rows));
+    state.w = w; state.h = h; state.cssW = wCss; state.cssH = hCss;
+    // integer art-pixel size so every art pixel is the same size on screen (never 1:1, which reads as a render)
+    state.px = Math.max(2, Math.round(Math.min(h, w * 0.9) / state.rows));
     state.lowW = Math.ceil(w / state.px); state.lowH = Math.ceil(h / state.px);
     renderer.setSize(w, h, false);
     canvas.style.width = wCss + 'px'; canvas.style.height = hCss + 'px';
@@ -158,10 +171,12 @@ export function createRenderer(canvas, opts = {}) {
     updateCamera();
   }
 
+  const _right = new THREE.Vector3(), _up = new THREE.Vector3(), _p = new THREE.Vector3();
   function updateCamera() {
     const aspect = state.lowW / state.lowH;
-    // keep the scene's apparent size tied to the shorter side
-    const hView = aspect < 1.05 ? view.height * (1.05 / aspect) : view.height;
+    const zoom = view.zoom > 0 ? view.zoom : 1;
+    const hFit = Math.max(view.height, view.fitW / aspect);   // metres visible vertically at zoom 1
+    const hView = hFit / zoom;
     const wView = hView * aspect;
     camera.left = -wView / 2; camera.right = wView / 2; camera.top = hView / 2; camera.bottom = -hView / 2;
     const r = 30;
@@ -172,16 +187,44 @@ export function createRenderer(canvas, opts = {}) {
       view.target.z + r * ce * Math.cos(view.azimuth));
     camera.lookAt(view.target);
     camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    _right.setFromMatrixColumn(camera.matrixWorld, 0);
+    _up.setFromMatrixColumn(camera.matrixWorld, 1);
+    const p = _p.copy(camera.position);
+    // Framing offset along camera-up (raising the look point moves the content down on screen).
+    // shiftY is a fraction of the frame height, capped at the square-frame height in portrait so it
+    // stays a content-relative nudge there.
+    if (!view.centred) {
+      let off = view.shiftY * Math.min(hFit, view.fitW) / zoom;
+      if (aspect < 0.8 && view.insets.bottom > 0) off -= 0.5 * (view.insets.bottom / state.cssH) * hView;
+      p.addScaledVector(_up, off);
+    }
     // Snap the camera to the art-pixel grid so static pixels never shimmer.
     const worldPerPx = hView / state.lowH;
-    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
-    const p = camera.position.clone();
-    const sx = p.dot(right), sy = p.dot(up);
-    p.addScaledVector(right, Math.round(sx / worldPerPx) * worldPerPx - sx);
-    p.addScaledVector(up, Math.round(sy / worldPerPx) * worldPerPx - sy);
+    const sx = p.dot(_right), sy = p.dot(_up);
+    p.addScaledVector(_right, Math.round(sx / worldPerPx) * worldPerPx - sx);
+    p.addScaledVector(_up, Math.round(sy / worldPerPx) * worldPerPx - sy);
     camera.position.copy(p);
     camera.updateMatrixWorld();
+    U.uArtPx.value = hFit / state.lowH;   // = hView * zoom / lowH: one art pixel in metres at zoom 1
+  }
+
+  // Insets (CSS px) of page chrome over the canvas; only `bottom` is used, and only in portrait.
+  function setInsets({ bottom = 0 } = {}) {
+    if (Math.abs(bottom - view.insets.bottom) < 0.5) return;
+    view.insets.bottom = bottom;
+    updateCamera();
+  }
+
+  // Call cb whenever devicePixelRatio changes (browser zoom, moving to another screen). Re-armed each time.
+  function watchDpr(cb) {
+    let mq = null;
+    const on = () => { arm(); cb(); };
+    const arm = () => {
+      mq?.removeEventListener?.('change', on);
+      try { mq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`); mq.addEventListener?.('change', on); } catch { mq = null; }
+    };
+    arm();
   }
 
   const tmpA = new THREE.Color(), tmpB = new THREE.Color();
@@ -201,6 +244,7 @@ export function createRenderer(canvas, opts = {}) {
     const s = bgColor.clone().convertLinearToSRGB(); // Color works in linear; the post pass outputs sRGB
     post.uniforms.uBg.value.set(s.r, s.g, s.b);
     renderer.setClearColor(0x000000, 1);
+    post.uniforms.uCool.value = THREE.MathUtils.lerp(0.55, 0.30, night);   // less blue push in night shadows
     U.uNight.value = night;
   }
 
@@ -224,5 +268,5 @@ export function createRenderer(canvas, opts = {}) {
   }
 
   applyLighting(0);
-  return { renderer, scene, camera, view, sun, hemi, ambient, state, post, resize, updateCamera, setMode, render, applyLighting };
+  return { renderer, scene, camera, view, sun, hemi, ambient, state, post, resize, updateCamera, setInsets, watchDpr, setMode, render, applyLighting };
 }
