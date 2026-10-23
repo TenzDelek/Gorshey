@@ -3,18 +3,17 @@
 // Everything animated is a pure function of t with integer cycles per LOOP.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { mat, PAL, LAYOUT, cyc, CYC_BASE, TAU, wind, rng, frac, clamp, lerp, smooth, hash2, U } from './core.js';
+import { mat, PAL, LAYOUT, LOOP as LOOP48, cyc, CYC_BASE, TAU, wind, rng, frac, clamp, lerp, smooth, hash2, U, WIND_DIR, glslColor as glc } from './core.js';
 // Particle lives were tuned against a 24 s period; core LOOP is 48 s = 2 × CYC_BASE, so these stay seamless.
 const LOOP = CYC_BASE;
 
 const [FX, FZ] = LAYOUT.fire;
-// Prevailing wind direction on the ground plane (core.wind() only gives a scalar gust).
+// Prevailing wind on the ground plane is core WIND_DIR (core.wind() only gives a scalar gust).
 // Smoke and sparks drift toward screen-right at the default camera.
-const WIND = new THREE.Vector2(1.0, -0.55).normalize();   // same as ground.js gWindDir()
+const WX = WIND_DIR.x, WZ = WIND_DIR.z;
 const FLAME_S = 1.1;    // overall flame height scale
 const FLAME_H = 1.04 * FLAME_S;   // nominal flame height (m)
 
-const glc = (hex) => { const c = new THREE.Color(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };
 
 // Fire colours (sRGB hex; ramps go from hot core to cool tip)
 const FC = {
@@ -335,25 +334,47 @@ export function build(ctx) {
   const sparkMat = mat(0xffffff, { grain: 0, instFade: true, fragment: { head: '', body: emissiveFromInstance } });
   const sparks = new THREE.InstancedMesh(sparkGeo, sparkMat, NS);
   sparks.castShadow = false; sparks.receiveShadow = false; sparks.frustumCulled = false;
-  const SPARKS = Array.from({ length: NS }, (_, i) => ({ k: [8, 9, 10, 12, 14][Math.floor(R() * 5)], ph: i / NS, s: i * 7.13 + 1 }));
+  // k = lives per 48 s loop: 24 / 32 / 40 → 2 / 1.5 / 1.2 s lives
+  const SPARKS = Array.from({ length: NS }, (_, i) => ({ k: [24, 32, 40][Math.floor(R() * 3)], ph: i / NS, s: i * 7.13 + 1 }));
   for (let i = 0; i < NS; i++) sparks.setColorAt(i, new THREE.Color(FC.hot));
   group.add(sparks);
 
   // ---------------------------------------------------------------- smoke
-  const NM = 8;
+  // A thin wisp that only shows high above the pit. The back row of the ring sits behind the column on
+  // screen, so the smoke is gated on the pixel's screen height above the pit base, expressed in metres of
+  // height at the pit (hq). hq = view-space y relative to the pit, / cos(elevation), so it holds for any
+  // azimuth and zoom. At the default 33° elevation the dancers behind the fire reach hq ≈ 3.52 m (raised
+  // sleeves; hat tops ≈ 3.46 m) over the whole loop (shots/polish/fire/headsweep.mjs), so nothing below
+  // SMOKE_G0 is drawn.
+  const SMOKE_G0 = 3.58, SMOKE_G1 = 3.85;
+  const NM = 14;
   const smokeGeo = new THREE.IcosahedronGeometry(1, 1);
   const smokeFade = new THREE.InstancedBufferAttribute(new Float32Array(NM).fill(0), 1);
   smokeGeo.setAttribute('aFade', smokeFade);
-  const smokeMat = mat(0xd2ccc2, {
-    flat: false, grain: 0.03, grainScale: 14, instFade: true, emissive: 0x000000,
-    // denser in the middle of each puff, thin at its rim
-    fragment: { head: '', body: `{ float sf = clamp(normalize(vNormal).z, 0.0, 1.0); if (vFade * (0.25 + 0.95 * sf * sf) < gBayer4(gl_FragCoord.xy)) discard; }` },
+  const smokeMat = mat(0xffffff, {
+    flat: false, grain: 0.03, grainScale: 14, instFade: true,
+    fragment: {
+      head: '',
+      body: /* glsl */`
+        {
+          float hq = (-vViewPosition.y - (viewMatrix * vec4(${FX.toFixed(3)}, 0.0, ${FZ.toFixed(3)}, 1.0)).y) / max(viewMatrix[1].y, 0.2);
+          float gate = smoothstep(${SMOKE_G0.toFixed(2)}, ${SMOKE_G1.toFixed(2)}, hq);
+          // denser in the middle of each puff, thin at its rim
+          float sf = clamp(normalize(vNormal).z, 0.0, 1.0);
+          if (vFade * gate * (0.25 + 0.95 * sf * sf) < gBayer4(gl_FragCoord.xy)) discard;
+          // cool grey, a touch lighter as it thins out higher up; mostly self-coloured so it reads as smoke
+          float up = smoothstep(${SMOKE_G0.toFixed(2)}, 5.4, hq);
+          vec3 dayC = mix(${glc(0x6c7886)}, ${glc(0x8c96a2)}, up);
+          vec3 nightC = mix(${glc(0x5d6680)}, ${glc(0x6e7896)}, up);
+          vec3 c = mix(dayC, nightC, uNight);
+          diffuseColor.rgb = c * mix(0.3, 0.8, uNight);
+          totalEmissiveRadiance = c * mix(0.66, 0.32, uNight);
+        }`,
+    },
   });
   const smoke = new THREE.InstancedMesh(smokeGeo, smokeMat, NM);
   smoke.castShadow = false; smoke.receiveShadow = false; smoke.frustumCulled = false;
   group.add(smoke);
-  const SMOKE_DAY = new THREE.Color(0xd9d5cd), SMOKE_NIGHT = new THREE.Color(0x6a7390);
-  const SMOKE_DAY_E = new THREE.Color(0x77736c), SMOKE_NIGHT_E = new THREE.Color(0x1c2130);
 
   // ---------------------------------------------------------------- fire light
   const light = new THREE.PointLight(0xff9446, 1, 8.5, 1.0);
@@ -366,11 +387,33 @@ export function build(ctx) {
   light.shadow.normalBias = 0.03;
   light.shadow.autoUpdate = false;
   light.shadow.intensity = 0;
+  // Render the cube shadow once in main.js's pre-ready frame, so its depth programs compile at load and
+  // the first switch to night doesn't hitch. castShadow stays on; night only flips autoUpdate + intensity.
+  light.shadow.needsUpdate = true;
   group.add(light);
-  ctx.shared.fireLight = light;
+  // three's shadow pass runs before the renderer gathers the frame's lights, so on the very first frame the
+  // cube-shadow depth programs would be keyed to an empty light state and compile again on the first night
+  // frame anyway. Once the fire is in the scene, gather the scene's lights once (compile() of an empty
+  // object compiles no materials; its lights come from the target scene) so that first pass builds the
+  // same programs night uses.
+  let lightsGathered = false;
+  const gatherLights = () => {
+    let root = light;
+    while (root.parent) root = root.parent;
+    if (root !== ctx.scene || !ctx.renderer) return;
+    ctx.renderer.compile(new THREE.Object3D(), ctx.camera, ctx.scene);
+    lightsGathered = true;
+  };
 
-  const flicker = (t) => 1 + 0.08 * Math.sin(cyc(t, 83)) + 0.06 * Math.sin(cyc(t, 131) + 1.3) + 0.04 * Math.sin(cyc(t, 197) + 2.1) + 0.05 * Math.sin(cyc(t, 37) + 0.4);
-  ctx.shared.fireFlicker = flicker;
+  // The two slow components carry the flicker and the fast ones are small, so lit surfaces step about one
+  // dither band at a time.
+  const flicker = (t) => 1 + 0.05 * Math.sin(cyc(t, 83)) + 0.02 * Math.sin(cyc(t, 131) + 1.3) + 0.01 * Math.sin(cyc(t, 197) + 2.1) + 0.05 * Math.sin(cyc(t, 37) + 0.4);
+  // ctx.shared.fireFlicker(t) → flicker factor at time t (a pure function of t). Read as a number
+  // (+ctx.shared.fireFlicker) it gives the factor of the frame fire last updated.
+  let flNow = flicker(0);
+  const fireFlicker = (t) => flicker(t);
+  fireFlicker.valueOf = () => flNow;
+  ctx.shared.fireFlicker = fireFlicker;
 
   // ---------------------------------------------------------------- night light pool on the ground
   // Sparse warm stipple on the ground, densest near the pit, thinning out in Bayer steps.
@@ -417,10 +460,12 @@ export function build(ctx) {
   const cycIndex = (u, k) => ((Math.floor(u) % k) + k) % k;   // per-cycle id, loop periodic
 
   function update(t) {
+    if (!lightsGathered) gatherLights();
     const night = U.uNight.value;
     const gust = wind(t, FX, FZ);
-    const lean = 0.09 + 0.07 * gust;               // radians toward WIND
+    const lean = 0.09 + 0.07 * gust;               // radians toward WIND_DIR
     const fl = flicker(t);
+    flNow = fl;
 
     // tongues
     TONGUES.forEach((tg, i) => {
@@ -436,8 +481,8 @@ export function build(ctx) {
       }
       const sway = 0.07 * Math.sin(cyc(t, tg.wn) + tg.wp);
       const sp = tg.splay * (1 + 0.25 * Math.sin(cyc(t, tg.wn + 5) + tg.p2));
-      const lx = WIND.x * lean + Math.cos(tg.sdir) * sp + sway * 0.6;
-      const lz = WIND.y * lean + Math.sin(tg.sdir) * sp + sway * 0.4;
+      const lx = WX * lean + Math.cos(tg.sdir) * sp + sway * 0.6;
+      const lz = WZ * lean + Math.sin(tg.sdir) * sp + sway * 0.4;
       // rotate +Y toward (lx, lz): axis = (lz, 0, -lx)
       AX.set(lz, 0, -lx).normalize();
       Q.setFromAxisAngle(AX, Math.hypot(lx, lz));
@@ -460,7 +505,7 @@ export function build(ctx) {
       const ang = h1 * TAU, rr = 0.02 + h2 * 0.12;
       const y = (0.62 + h2 * 0.32) * FLAME_S + a * (0.28 + 0.2 * h1);
       const drift = (lean + 0.05) * y;
-      P.set(Math.cos(ang) * rr + WIND.x * drift, y, Math.sin(ang) * rr + WIND.y * drift);
+      P.set(Math.cos(ang) * rr + WX * drift, y, Math.sin(ang) * rr + WZ * drift);
       const s = live ? (0.03 - 0.016 * a) * (0.85 + 0.4 * h3) : 0;
       S.set(s, s * 1.6, s);
       M.compose(P, Q.identity(), S);
@@ -470,22 +515,24 @@ export function build(ctx) {
     });
     bits.instanceMatrix.needsUpdate = true; bits.instanceColor.needsUpdate = true; bitFade.needsUpdate = true;
 
-    // sparks: rise fast, slow down, spiral, drift downwind, cool from yellow to deep red
+    // sparks: shoot up out of the flames, slow down, spiral a little in a narrow column right over the
+    // pit, and are gone by ~2.2 m (below the back row's waists on screen); cool from yellow to deep red
     SPARKS.forEach((sp, i) => {
-      const u = (t * sp.k) / LOOP + sp.ph;
+      const u = (t * sp.k) / LOOP48 + sp.ph;
       const a = frac(u), ci = cycIndex(u, sp.k);
       const h1 = hash2(sp.s, ci * 1.31 + 0.2), h2 = hash2(sp.s + 3.3, ci * 2.17 + 1.1), h3 = hash2(sp.s + 7.7, ci * 0.73 + 4.4);
-      const live = h3 < 0.5;
-      const H = 1.2 + h1 * 1.7;
-      const y = (0.7 + h2 * 0.3) * FLAME_S + H * (1 - (1 - a) * (1 - a));
-      const spin = (h1 < 0.5 ? -1 : 1) * (0.5 + h2 * 1.1);
+      const live = h3 < 0.4;
+      const y0 = 0.7 + h2 * 0.24;
+      const H = 0.82 + h1 * 0.42;                    // top y0 + H ≤ 2.18 m
+      const y = y0 + H * (1 - Math.pow(1 - a, 2.4));
+      const spin = (h1 < 0.5 ? -1 : 1) * (0.4 + h2 * 0.8);
       const th = h1 * TAU + spin * a * TAU;
-      const rr = 0.05 + 0.1 * h2 + 0.28 * a;
-      const drift = a * (0.55 + 0.45 * gust) * (0.6 + h3 * 1.2);
-      const zig = 0.025 * Math.sin(cyc(t, 144) + i * 1.7) * a;
-      P.set(Math.cos(th) * rr + WIND.x * drift + zig, y, Math.sin(th) * rr + WIND.y * drift);
+      const rr = 0.025 + 0.05 * h2 + 0.06 * a;
+      const drift = a * (0.12 + 0.08 * gust) * (0.6 + h3 * 1.5);
+      const zig = 0.012 * Math.sin(cyc(t, 144) + i * 1.7) * a;
+      P.set(Math.cos(th) * rr + WX * drift + zig, y, Math.sin(th) * rr + WZ * drift);
       const s = live ? 0.04 : 0;
-      S.set(s, s * (a < 0.2 ? 1.7 : 1), s);
+      S.set(s, s * (a < 0.25 ? 1.8 : 1), s);
       M.compose(P, Q.identity(), S);
       sparks.setMatrixAt(i, M);
       sparks.setColorAt(i, ramp(0.15 + a * 0.85, C));
@@ -493,23 +540,21 @@ export function build(ctx) {
     });
     sparks.instanceMatrix.needsUpdate = true; sparks.instanceColor.needsUpdate = true; sparkFade.needsUpdate = true;
 
-    // smoke: a thin dithered column that grows, thins and drifts downwind
+    // smoke: a thin dithered wisp (≤ 3 art px wide where it appears) that widens, thins and leans downwind
     for (let i = 0; i < NM; i++) {
       const a = frac((t * 3) / LOOP + i / NM);
-      const y = 1.45 + a * 2.5;
-      const r = 0.12 + a * 0.42;
-      const drift = a * a * 1.5 * (0.75 + 0.25 * gust) + a * 0.25;
-      const wob = 0.12 * Math.sin(cyc(t, 5) + i * 2.1) * a;
-      P.set(WIND.x * drift + wob, y, WIND.y * drift - wob * 0.5);
-      S.set(r, r * 0.8, r);
+      const y = 3.2 + a * 2.3;
+      const r = 0.04 + 0.32 * Math.pow(a, 1.6);
+      const drift = a * 0.8 + a * a * 1.1 * (0.75 + 0.25 * gust);
+      const wob = 0.1 * Math.sin(cyc(t, 5) + i * 2.1) * a;
+      P.set(WX * drift + wob, y, WZ * drift - wob * 0.5);
+      S.set(r, Math.max(r * 0.8, 0.1), r);
       Q.setFromAxisAngle(AX.set(0, 1, 0), i * 1.3 + a * 1.5);
       M.compose(P, Q, S);
       smoke.setMatrixAt(i, M);
-      smokeFade.setX(i, lerp(0.4, 0.46, night) * smooth(0, 0.22, a) * (1 - smooth(0.3, 1, a)));
+      smokeFade.setX(i, lerp(0.25, 0.46, night) * smooth(0, 0.1, a) * (1 - smooth(0.4, 1, a)));
     }
     smoke.instanceMatrix.needsUpdate = true; smokeFade.needsUpdate = true;
-    smokeMat.color.copy(SMOKE_DAY).lerp(SMOKE_NIGHT, night);
-    smokeMat.emissive.copy(SMOKE_DAY_E).lerp(SMOKE_NIGHT_E, night);
 
     // light: subtle by day, the main light at night; loop-periodic flicker and a little wander
     light.intensity = lerp(0.9, 9.5, night) * fl;
